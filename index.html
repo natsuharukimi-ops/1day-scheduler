@@ -1,0 +1,2568 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>1day scheduler</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="1day">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#2563eb">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='180'%20height='180'%3E%3Crect%20width='180'%20height='180'%20rx='36'%20fill='%232563eb'/%3E%3Ctext%20x='90'%20y='120'%20font-size='84'%20font-family='-apple-system,Helvetica,Arial,sans-serif'%20font-weight='700'%20fill='%23ffffff'%20text-anchor='middle'%3E1D%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --bg-elevated: #ffffff;
+    /* タイトルバー+日付ナビ/バナー用の専用色。--bg-elevatedと同じにすると
+       タスクの箱(同じく--bg-elevated)と見分けが付きにくいという指摘を
+       受けたため、どちらとも違う寒色寄りのトーンにしている。 */
+    --header-bg: #e7ecf5;
+    --text: #1a1d23;
+    --text-muted: #6b7280;
+    --border: #e2e4e9;
+    --accent: #2563eb;
+    --accent-contrast: #ffffff;
+    --danger: #dc2626;
+    --tab-inactive: #6b7280;
+    --radius: 14px;
+    --heat-0: #e5e7eb;
+    --heat-1: #bfdbfe;
+    --heat-2: #93c5fd;
+    --heat-3: #60a5fa;
+    --heat-4: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116;
+      --bg-elevated: #171b22;
+      --header-bg: #182236;
+      --text: #e7e9ec;
+      --text-muted: #9aa1ab;
+      --border: #2a2f38;
+      --accent: #4f8bff;
+      --accent-contrast: #0b1220;
+      --danger: #f87171;
+      --tab-inactive: #8890a0;
+      --heat-0: #1f2530;
+      --heat-1: #1e3a5f;
+      --heat-2: #2f5d8a;
+      --heat-3: #3f7cc2;
+      --heat-4: #4f8bff;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .app-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; padding-top: calc(8px + env(safe-area-inset-top));
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .app-header h1 { font-size: 18px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .header-streak { font-size: 14px; color: var(--accent); }
+  .icon-btn {
+    border: none; background: transparent; font-size: 20px; padding: 8px; line-height: 1;
+    cursor: pointer; border-radius: 10px; min-width: 44px; min-height: 44px;
+  }
+  .icon-btn:active { background: var(--border); }
+  .icon-btn.danger { color: var(--danger); }
+  .icon-btn:disabled { opacity: 0.35; cursor: default; }
+  .icon-btn:disabled:active { background: transparent; }
+  /* 絵文字ではない記号だけのグリフ(◀▶↶↷等)は、透明背景+グリフの線の
+     太さだけに視認性を頼るとライト/ダーク双方で見づらくなる(日付ナビの
+     ◀▶📅→.date-nav-btn、設定の閉じるボタン→.modal-close-btnで既に
+     同じ指摘を受けて対応済み。新しく記号グリフのアイコンボタンを追加する
+     時は必ずこのクラスを付けて背景+枠線付きの円で囲むこと)。 */
+  .glyph-icon-btn {
+    background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);
+    border-radius: 50%;
+  }
+  .glyph-icon-btn:active { background: var(--border); }
+
+  main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
+
+  .tabbar {
+    display: flex; background: var(--bg-elevated); border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom); flex-shrink: 0;
+  }
+  .tab-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 8px 0 10px; border: none; background: transparent; color: var(--tab-inactive);
+    font-size: 11px; cursor: pointer; min-height: 52px;
+  }
+  .tab-btn .tab-icon { font-size: 22px; }
+  .tab-btn.active { color: var(--accent); font-weight: 600; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .time-row { display: flex; align-items: center; gap: 8px; }
+  .time-row input { flex: 1; min-width: 0; }
+
+  .btn {
+    font-size: 15px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg-elevated); color: var(--text); cursor: pointer; min-height: 44px;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
+  .btn.danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .empty-hint { color: var(--text-muted); font-size: 14px; padding: 16px 0; text-align: center; list-style: none; }
+
+  /* margin-topで先頭(00:00)の時刻ラベル(-8px上にオフセットして表示される)
+     のための余白を確保する(以前はヘッダーのすぐ下で見切れていた)。
+     絶対配置された子要素の座標原点は「padding edge」であり、これは
+     border直下の固定位置でpaddingの太さ自体には左右されない(paddingを
+     足しても中身がずれるだけで子要素の原点はずれない)。そのため
+     padding-topでは効かず、要素自体を通常フローで押し下げるmargin-topを
+     使う必要がある(実際に試してpadding-topでは見切れが直らなかった)。 */
+  .timeline-wrap { position: relative; margin: 12px 0 24px; }
+  .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
+  .timeline-hour-label {
+    position: absolute; left: 0; top: -8px; font-size: 11px; color: var(--text-muted);
+    background: var(--bg); padding-right: 4px;
+  }
+  .timeline-now-line { position: absolute; left: 44px; right: 0; height: 2px; background: var(--danger); z-index: 5; }
+  .timeline-task {
+    position: absolute; left: 48px; right: 8px; overflow: hidden;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 2px 8px; cursor: grab;
+    touch-action: none; /* ドラッグ操作をブラウザの既定スクロールと競合させない */
+  }
+  .timeline-task.done { opacity: 0.55; }
+  .timeline-task.dragging { z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,0.35); opacity: 0.95; cursor: grabbing; }
+  /* チェックボックス(左上)・✏️(右上、showFullの時)と重ならないよう
+     左右をインセットする。よくあるサイズ変更カーソル(ns-resize)を
+     常時表示し、掴める場所であることが見た目でも分かるようにする。 */
+  /* heightはCSSで固定せず、DRAG_EDGE_ZONE_PXを使ってrenderTimelineHtml側で
+     インラインstyleとして指定する(JSの定数とCSSが別々の値を持つと
+     ここだけ変更漏れが起きる。実際に定数を変えても見た目の判定領域が
+     変わらないというバグがあった)。 */
+  .timeline-resize-handle {
+    position: absolute; left: 26px; right: 34px; cursor: ns-resize; z-index: 3;
+  }
+  .timeline-resize-handle.top { top: 0; }
+  .timeline-resize-handle.bottom { bottom: 0; }
+  .drag-time-tooltip {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 30;
+    background: var(--text); color: var(--bg); font-size: 13px; font-weight: 600;
+    padding: 4px 10px; border-radius: 8px; pointer-events: none; display: none; white-space: nowrap;
+  }
+  .timeline-check { position: absolute; top: 2px; left: 2px; z-index: 2; }
+  .timeline-check input { width: 18px; height: 18px; }
+  .timeline-task-body { padding-left: 22px; }
+  .timeline-task-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .timeline-task-title.compact { font-size: 12px; }
+  .timeline-task-title.done { text-decoration: line-through; color: var(--text-muted); }
+  .timeline-task-meta { font-size: 11px; color: var(--text-muted); }
+  .timeline-edit-btn { position: absolute; top: 0; right: 0; font-size: 14px; min-width: 28px; min-height: 28px; padding: 4px; }
+  .timeline-task.expanded { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+  /* 位置は動かさない方針(閉じるボタン優先)。展開中に同時表示される
+     下端リサイズハンドルの方をこのボタンの右側だけ避けるようにしている
+     (timelineTaskBoxHtmlのresizeHandles参照)。 */
+  .timeline-collapse-btn {
+    position: absolute; bottom: 3px; right: 3px; font-size: 11px; height: 22px; padding: 0 8px;
+    background: var(--border); border: none; border-radius: 999px; color: var(--text); min-height: 0;
+  }
+  .timeline-expand-hint {
+    position: absolute; bottom: 1px; right: 4px; font-size: 12px; color: var(--text-muted); line-height: 1;
+  }
+  .timeline-add-fab {
+    position: fixed; right: 20px; bottom: calc(76px + env(safe-area-inset-bottom));
+    width: 52px; height: 52px; border-radius: 50%; border: none; background: var(--accent);
+    color: var(--accent-contrast); font-size: 26px; line-height: 1; cursor: pointer; z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  .focus-select-row { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .focus-task-detail {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; margin-bottom: 16px;
+  }
+  .focus-task-detail-title { font-size: 16px; font-weight: 600; }
+  .focus-task-detail-title.done { text-decoration: line-through; color: var(--text-muted); }
+  .focus-task-detail-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .focus-select-row select {
+    flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg-elevated); color: var(--text);
+  }
+  .timer-card {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 32px 16px; text-align: center;
+  }
+  .timer-phase { font-size: 15px; color: var(--text-muted); margin-bottom: 8px; }
+  .timer-display { font-size: 56px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
+  .timer-progress { font-size: 14px; color: var(--text-muted); margin-top: 8px; }
+  .timer-controls { display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .timer-hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+
+  .streak-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .streak-box {
+    flex: 1; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 8px; text-align: center;
+  }
+  .streak-value { font-size: 24px; font-weight: 700; color: var(--accent); }
+  .streak-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  .today-table {
+    width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+  }
+  .today-table th, .today-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  .today-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+
+  .heatmap-title { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+  .heatmap-grid { display: grid; grid-template-columns: repeat(7, 20px); grid-auto-rows: 20px; gap: 4px; }
+  .heat-cell { width: 20px; height: 20px; border-radius: 4px; cursor: pointer; }
+  .heat-cell.level-0 { background: var(--heat-0); }
+  .heat-cell.level-1 { background: var(--heat-1); }
+  .heat-cell.level-2 { background: var(--heat-2); }
+  .heat-cell.level-3 { background: var(--heat-3); }
+  .heat-cell.level-4 { background: var(--heat-4); }
+  .heatmap-detail { font-size: 13px; color: var(--text-muted); margin-top: 8px; min-height: 18px; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 20px; }
+  .modal.hidden { display: none; }
+  .modal-card {
+    background: var(--bg-elevated); width: 100%; max-width: 480px; border-radius: 16px;
+    padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); max-height: 80vh; overflow-y: auto;
+  }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .modal-header h2 { margin: 0; font-size: 17px; }
+  .modal-close-btn {
+    background: var(--border); font-size: 22px; min-width: 40px; min-height: 40px; border-radius: 50%;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 14px; color: var(--text-muted); }
+  .field input[type="number"], .field input[type="text"], .field select {
+    font-size: 16px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text);
+  }
+  .field input[type="file"] { font-size: 14px; }
+  .field input:disabled { opacity: 0.55; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  .header-actions { display: flex; gap: 2px; }
+
+  .chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 8px; -webkit-overflow-scrolling: touch; }
+  .chip {
+    flex-shrink: 0; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .chip.selected { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+  .chip.static { cursor: default; font-size: 11px; padding: 3px 9px; }
+  .chip-hint { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .task-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; margin-bottom: 3px; }
+
+  .date-nav { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+  .date-nav .date-label { flex: 1; text-align: center; font-size: 15px; color: var(--text-muted); }
+  .date-nav .today-jump { font-size: 12px; color: var(--accent); background: transparent; border: none; cursor: pointer; padding: 6px; }
+  .date-nav-btn {
+    background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);
+    border-radius: 50%; font-size: 15px;
+  }
+  .date-nav-btn:active { background: var(--border); }
+  .date-nav .today-jump:disabled { opacity: 0.35; cursor: default; }
+
+  .now-banner {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 12px; margin-bottom: 8px; font-size: 14px;
+  }
+  .now-banner.active { border-left: 4px solid var(--accent); cursor: pointer; }
+
+  /* mainのpadding(16px)ぶんを負のマージンで打ち消し、position:stickyが
+     ビューポート最上端(main内)にぴったり付くようにする。自身にpaddingを
+     足して見た目上の余白は復元する(marginは-16pxのままmainのpaddingと
+     一致させる必要があるが、paddingは見た目の詰まり具合を決めるだけなので
+     独立して小さくできる。「もう少しスマートに」という指摘を受けて
+     上下方向を詰めた)。背景は最初var(--bg)(ページ全体と同じ)、次に
+     var(--bg-elevated)(タスクの箱と同じ)を試したがどちらも「境界が
+     分かりづらい」という指摘が続いた。var(--bg-elevated)はタスクの箱
+     (.timeline-task)や.now-banner自身も使っている色のため、スクロールで
+     箱がヘッダーのすぐ下まで来ると特に見分けが付きにくかった。専用の
+     var(--header-bg)(タスクの箱の色とは別トーン)に変え、.app-headerと
+     揃えることでヘッダー全体(タイトルバー+日付ナビ+バナー)を一続きの
+     「浮いている面」として見せている。 */
+  .today-sticky-header {
+    position: sticky; top: -16px; z-index: 15;
+    margin: -16px -16px 0; padding: 10px 16px 6px;
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
+  .calendar-weekday { text-align: center; font-size: 11px; color: var(--text-muted); }
+  .calendar-cell {
+    position: relative; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; font-size: 14px; cursor: pointer; background: var(--bg);
+  }
+  .calendar-cell.empty { visibility: hidden; cursor: default; }
+  .calendar-cell.is-today { box-shadow: inset 0 0 0 2px var(--accent); }
+  .calendar-cell.is-selected { background: var(--accent); color: var(--accent-contrast); }
+  .calendar-cell.has-tasks::after {
+    content: ""; position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .calendar-cell.is-selected.has-tasks::after { background: var(--accent-contrast); }
+  .calendar-nav { display: flex; align-items: center; justify-content: space-between; }
+  .calendar-nav .month-label { font-size: 15px; font-weight: 600; }
+
+  .tag-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 14px; gap: 8px; }
+  .tag-row:last-child { border-bottom: none; }
+  .tag-tree-prefix {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--text-muted); white-space: pre;
+  }
+  .tag-virtual-label { color: var(--text-muted); font-style: italic; }
+  .tag-stale-badge {
+    font-size: 11px; color: var(--text-muted); margin-left: 6px; font-weight: normal;
+    background: var(--border); border-radius: 999px; padding: 2px 7px; white-space: nowrap;
+  }
+  .tag-agg-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .tag-agg-row:last-child { border-bottom: none; }
+
+  .archive-note { font-size: 12px; color: var(--text-muted); margin-top: 10px; text-align: center; }
+  .all-time-row {
+    font-size: 13px; color: var(--text-muted); text-align: center; padding: 10px;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="app-header">
+    <h1>1day scheduler <span id="headerStreak" class="header-streak"></span></h1>
+    <div class="header-actions">
+      <button class="icon-btn glyph-icon-btn" id="undoBtn" data-action="task:undo" aria-label="元に戻す">↶</button>
+      <button class="icon-btn glyph-icon-btn" id="redoBtn" data-action="task:redo" aria-label="やり直す">↷</button>
+      <button class="icon-btn" data-action="tags:open" aria-label="タグ管理">🏷️</button>
+      <button class="icon-btn" data-action="settings-open" aria-label="設定">⚙️</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="view active" data-view="today" id="todayView"></section>
+    <section class="view" data-view="focus" id="focusView"></section>
+    <section class="view" data-view="stats" id="statsView"></section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-action="tab" data-tab="today">
+      <span class="tab-icon">📋</span><span class="tab-label">予定</span>
+    </button>
+    <button class="tab-btn" data-action="tab" data-tab="focus">
+      <span class="tab-icon">⏱</span><span class="tab-label">集中</span>
+    </button>
+    <button class="tab-btn" data-action="tab" data-tab="stats">
+      <span class="tab-icon">📊</span><span class="tab-label">実績</span>
+    </button>
+  </nav>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>設定</h2>
+        <button class="icon-btn modal-close-btn" data-action="settings-close" aria-label="閉じる">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span>集中(ポモドーロ)の長さ(分)</span>
+          <input type="number" id="settingsFocusMinutes" min="5" max="90">
+        </label>
+        <label class="field">
+          <span>休憩の長さ(分)</span>
+          <input type="number" id="settingsBreakMinutes" min="1" max="30">
+        </label>
+        <label class="field">
+          <span>継続日カウントの閾値(この数以上タスクを完了した日を継続日とする)</span>
+          <input type="number" id="settingsStreakThreshold" min="1" max="20">
+        </label>
+        <button class="btn primary" data-action="settings-save">設定を保存</button>
+        <hr>
+        <div class="field">
+          <span>バックアップ(JSONファイルとして書き出し)</span>
+          <button class="btn" data-action="export">データをエクスポート</button>
+        </div>
+        <div class="field">
+          <span>復元(選択したファイルで現在のデータを上書きします)</span>
+          <input type="file" id="importFile" accept="application/json">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="calendarModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>日付を選択</h2>
+        <button class="icon-btn modal-close-btn" data-action="cal:close" aria-label="閉じる">✕</button>
+      </div>
+      <div id="calendarBody"></div>
+    </div>
+  </div>
+
+  <div id="tagsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>タグ管理</h2>
+        <button class="icon-btn modal-close-btn" data-action="tags:close" aria-label="閉じる">✕</button>
+      </div>
+      <div id="tagsListBody"></div>
+      <hr>
+      <div class="field">
+        <span>親タグ(任意)</span>
+        <select id="tagParentSelect"><option value="">(トップレベル)</option></select>
+      </div>
+      <div class="field">
+        <span>タグ名</span>
+        <input type="text" id="tagNameInput" placeholder="例: 開発" maxlength="40">
+      </div>
+      <div class="time-row">
+        <button class="btn primary" id="tagSubmitBtn" data-action="tags:add">タグを作成</button>
+        <button class="btn" id="tagCancelEditBtn" data-action="tags:cancel-edit" style="display:none">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="taskEditModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="taskModalTitle">タスクを編集</h2>
+        <button class="icon-btn modal-close-btn" data-action="task:edit-close" aria-label="閉じる">✕</button>
+      </div>
+      <label class="field">
+        <span>タスク名</span>
+        <input type="text" id="editTaskTitle" maxlength="60">
+      </label>
+      <div id="editTitleHistoryContainer"></div>
+      <div class="time-row" style="margin-bottom:14px">
+        <input type="time" id="editTaskStart" step="900">
+        <span>〜</span>
+        <input type="time" id="editTaskEnd" step="900">
+      </div>
+      <div class="field">
+        <span>タグ</span>
+        <div id="editTagPickerContainer"></div>
+      </div>
+      <div id="taskEditOnlyFields">
+        <label class="field">
+          <span>実績時間(分)</span>
+          <input type="number" id="editTaskActual" min="0">
+          <span id="editTaskActualNote" class="chip-hint" style="display:none">集中タイマーが実行中または中断中のため、終了後に確定します</span>
+        </label>
+        <label class="field" style="flex-direction:row; align-items:center; gap:8px;">
+          <input type="checkbox" id="editTaskCompleted" style="width:22px;height:22px;">
+          <span>完了にする</span>
+        </label>
+      </div>
+      <button class="btn primary" id="taskModalSaveBtn" data-action="task:edit-save">保存</button>
+      <button class="btn danger-outline" id="taskModalDeleteBtn" data-action="task:modal-delete" style="margin-top:8px">🗑 削除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==== 1. 定数・設定値 ====
+const STORAGE_KEY = "1ds:state";
+const SCHEMA_VERSION = 5;
+const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
+const TITLE_HISTORY_MAX_AGE_DAYS = 180;
+const DAY_DETAIL_RETENTION_MONTHS = 6;
+const TAG_STALE_AFTER_DAYS = 60;
+const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
+// 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
+// タイトル+時刻/実績+タグ1行が収まるようこの縮尺にしている。これ未満の
+// 短いタスクは簡易表示になり、タップで一時的にこの高さまで展開できる。
+const FULL_CONTENT_PX = 60 * PX_PER_MIN;
+const TIMELINE_SNAP_MIN = 15; // 空白タップでの新規作成の時刻スナップ単位
+const DEFAULT_NEW_TASK_MINUTES = 60; // 新規タスク作成時の既定所要時間
+// 上端/下端リサイズのつかみ判定領域(タイムラインの箱・ドラッグ処理の両方から
+// 参照)。移動用の領域を広く取りたいという指摘を受け、12px→9px→6pxの順に
+// 狭めてきた(9pxでもまだ「30分タスクの高さの1/3くらいに見える」との
+// 指摘があったため)。
+const DRAG_EDGE_ZONE_PX = 6;
+// 上端+下端のつかみ判定領域(DRAG_EDGE_ZONE_PX×2)に加えて、移動用に最低
+// 限の余白(12px)を残せる高さが無いと、短い箱では上下のリサイズ判定が
+// 重なり合い移動の判定領域が消えてしまう(実際に指摘を受けたバグ)。
+// この高さ未満の箱ではリサイズ用のつかみ領域自体を描画しない(箱全体が
+// 移動用になる)。
+const MIN_RESIZE_BOX_PX = DRAG_EDGE_ZONE_PX * 2 + 12;
+
+// ==== 2. 日付・ID・小さな純粋ユーティリティ ====
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+// Date.toISOString()はUTC基準のため日本時間では日付がズレる(深夜0〜8時台に前日扱いになる)。
+// 必ずローカルのgetter経由で組み立てる。
+function todayKey(d = new Date()) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function addDays(dayKey, n) {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + n);
+  return todayKey(dt);
+}
+function genId() {
+  // crypto.randomUUID()はsecure context要求でfile://での可用性が不透明なため自前生成にする。
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function toMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+// 開始・終了時刻は常にTIMELINE_SNAP_MIN(15分)刻みに揃える。<input type="time">
+// のstep="900"はSafari/iOSのホイールピッカーでは効くが、手入力やブラウザに
+// よっては素通りすることがあるため、保存時にも必ずここでスナップし直す
+// (UIのヒントだけに頼らない防御的な最終チェック)。
+function snapMinutesToGrid(min) {
+  return Math.round(min / TIMELINE_SNAP_MIN) * TIMELINE_SNAP_MIN;
+}
+function formatDuration(min) {
+  if (min < 60) return `${min}分`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h}時間${m}分` : `${h}時間`;
+}
+function formatMMSS(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60), s = total % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+function formatJapaneseDate(d) {
+  const days = ["日", "月", "火", "水", "木", "金", "土"];
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${days[d.getDay()]})`;
+}
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[ch]));
+}
+
+// ==== 3. ストレージ層 ====
+function defaultState() {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    settings: { ...DEFAULT_SETTINGS },
+    days: {},
+    streak: { current: 0, longest: 0, lastAchievedDay: null },
+    activeSession: null,
+    pausedSessions: {}, // taskId -> {kind, pausedRemainingMs}。一時停止中に他タスクへ切り替えた際の退避先
+    lastOpenedDay: todayKey(),
+    tags: [],
+    taskTitleStats: {},
+    archive: { monthlySummaries: {} },
+  };
+}
+function ensureDay(state, dayKey) {
+  if (!state.days[dayKey]) state.days[dayKey] = { tasks: [], finalized: false };
+  return state.days[dayKey];
+}
+function migrateState(raw) {
+  if (!raw || typeof raw !== "object") return defaultState();
+  const state = defaultState();
+  state.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
+  state.days = raw.days && typeof raw.days === "object" ? raw.days : {};
+  // 旧データ(schemaVersion 1)のtaskにはtagsが無いため補う。
+  for (const dayKey in state.days) {
+    const entry = state.days[dayKey];
+    if (Array.isArray(entry.tasks)) {
+      entry.tasks = entry.tasks.map(t => ({ ...t, tags: Array.isArray(t.tags) ? t.tags : [] }));
+    }
+  }
+  state.streak = { current: 0, longest: 0, lastAchievedDay: null, ...(raw.streak || {}) };
+  state.activeSession = raw.activeSession || null;
+  // dayKeyの無い旧データ(このフィールド追加以前に保存されたactiveSession)は
+  // 起動時点の実際の今日を採用する。ほとんどの場合はそれで正しく、日を
+  // 跨いで残っていた極めて稀なケースだけ従来通り復元できない(元々このフィールドが
+  // 無い時点で日跨ぎは考慮されていなかったため、退行にはならない)。
+  if (state.activeSession && !state.activeSession.dayKey) state.activeSession.dayKey = todayKey();
+  state.pausedSessions = raw.pausedSessions && typeof raw.pausedSessions === "object" ? raw.pausedSessions : {};
+  for (const tid in state.pausedSessions) {
+    if (!state.pausedSessions[tid].dayKey) state.pausedSessions[tid].dayKey = todayKey();
+  }
+  state.lastOpenedDay = raw.lastOpenedDay || todayKey();
+  state.tags = Array.isArray(raw.tags) ? raw.tags : [];
+  state.taskTitleStats = raw.taskTitleStats && typeof raw.taskTitleStats === "object" ? raw.taskTitleStats : {};
+  state.archive = raw.archive && typeof raw.archive === "object" ? raw.archive : { monthlySummaries: {} };
+  state.archive.monthlySummaries = state.archive.monthlySummaries && typeof state.archive.monthlySummaries === "object"
+    ? state.archive.monthlySummaries : {};
+  return state;
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    return migrateState(JSON.parse(raw));
+  } catch (e) {
+    console.error("loadState failed", e);
+    return defaultState();
+  }
+}
+function saveState(state) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error("saveState failed", e);
+    alert("保存に失敗しました。ストレージの空き容量を確認してください。");
+  }
+}
+function exportStateAsJson(state) {
+  return JSON.stringify(state, null, 2);
+}
+function importStateFromJson(text) {
+  return migrateState(JSON.parse(text));
+}
+
+// ==== 4. ドメインロジック ====
+// 1ポモドーロ「ラウンド」=集中+休憩の合計分数(既定25+5=30分)。実際に
+// タイムライン上で1ラウンドぶん確保するには休憩時間も含めた枠が必要な
+// ため、計画ポモドーロ数はこの合計で割る(集中時間だけで割ると、休憩の
+// 分だけ実際には収まらない数になってしまう)。新規タスク作成時の既定
+// 所要時間にも同じ値を使う。
+function pomodoroRoundMinutes(settings) {
+  return settings.focusMinutes + settings.breakMinutes;
+}
+function computePlannedPomodoros(startTime, endTime, roundMinutes) {
+  const minutes = toMinutes(endTime) - toMinutes(startTime);
+  if (minutes <= 0) return null; // 日またぎタスクはv1では非対応
+  return { plannedMinutes: minutes, plannedPomodoros: Math.max(1, Math.ceil(minutes / roundMinutes)) };
+}
+// 半開区間判定: ちょうど隣接する時間帯(例: 09:00-10:00と10:00-11:00)は
+// 重なり無しとして許可する。タイムライン上でタスクの重なりを一切
+// 発生させないための唯一のバリデーション経路(作成・編集の両方から通す)。
+function hasOverlap(tasks, startTime, endTime, excludeId) {
+  const s = toMinutes(startTime), e = toMinutes(endTime);
+  return tasks.some(t => t.id !== excludeId && toMinutes(t.startTime) < e && s < toMinutes(t.endTime));
+}
+function addTask(state, dayKey, { title, startTime, endTime, tags }) {
+  const computed = computePlannedPomodoros(startTime, endTime, pomodoroRoundMinutes(state.settings));
+  if (!computed) throw new Error("終了時刻は開始時刻より後にしてください");
+  const day = ensureDay(state, dayKey);
+  if (hasOverlap(day.tasks, startTime, endTime, null)) {
+    throw new Error("この時間帯には既に別のタスクがあります");
+  }
+  day.tasks.push({
+    id: genId(), title, startTime, endTime,
+    plannedMinutes: computed.plannedMinutes,
+    plannedPomodoros: computed.plannedPomodoros,
+    actualMinutes: 0,
+    completed: false,
+    tags: Array.isArray(tags) ? tags : [],
+  });
+  recordTitleUsage(state, title);
+}
+function recordTitleUsage(state, title) {
+  const stat = state.taskTitleStats[title];
+  if (stat) { stat.count += 1; stat.lastUsedDay = todayKey(); }
+  else { state.taskTitleStats[title] = { count: 1, lastUsedDay: todayKey() }; }
+}
+function getTitleSuggestions(state, limit = 6) {
+  return Object.entries(state.taskTitleStats)
+    .sort((a, b) => (b[1].count - a[1].count) || (b[1].lastUsedDay < a[1].lastUsedDay ? -1 : 1))
+    .slice(0, limit)
+    .map(([title]) => title);
+}
+function pruneTaskTitleStats(state, todayDayKey, maxAgeDays = TITLE_HISTORY_MAX_AGE_DAYS) {
+  const cutoff = addDays(todayDayKey, -maxAgeDays);
+  for (const title in state.taskTitleStats) {
+    if (state.taskTitleStats[title].lastUsedDay < cutoff) delete state.taskTitleStats[title];
+  }
+}
+function updateTask(state, dayKey, taskId, { title, startTime, endTime, tags, actualMinutes, completed }) {
+  const day = state.days[dayKey]; if (!day) return;
+  const task = day.tasks.find(t => t.id === taskId); if (!task) return;
+  const computed = computePlannedPomodoros(startTime, endTime, pomodoroRoundMinutes(state.settings));
+  if (!computed) throw new Error("終了時刻は開始時刻より後にしてください");
+  if (hasOverlap(day.tasks, startTime, endTime, taskId)) {
+    throw new Error("この時間帯には既に別のタスクがあります");
+  }
+  task.title = title;
+  task.startTime = startTime;
+  task.endTime = endTime;
+  task.plannedMinutes = computed.plannedMinutes;
+  task.plannedPomodoros = computed.plannedPomodoros;
+  task.tags = Array.isArray(tags) ? tags : [];
+  task.actualMinutes = Math.max(0, Math.round(actualMinutes));
+  task.completed = !!completed;
+  recordTitleUsage(state, title);
+}
+function removeTask(state, dayKey, taskId) {
+  const day = state.days[dayKey]; if (!day) return;
+  day.tasks = day.tasks.filter(t => t.id !== taskId);
+}
+// タイムラインのドラッグ(移動・端リサイズ)専用の時刻書き換え。updateTask
+// と違い重なりを例外で拒否しない(重なりの解決は呼び出し側が
+// resolveDragOverlap/applyDragResultで先に済ませる前提の低レベル関数)。
+function setTaskTimeRange(state, dayKey, taskId, startMin, endMin) {
+  const day = state.days[dayKey]; if (!day) return;
+  const task = day.tasks.find(t => t.id === taskId); if (!task) return;
+  const computed = computePlannedPomodoros(formatHHMM(startMin), formatHHMM(endMin), pomodoroRoundMinutes(state.settings));
+  if (!computed) return;
+  task.startTime = formatHHMM(startMin);
+  task.endTime = formatHHMM(endMin);
+  task.plannedMinutes = computed.plannedMinutes;
+  task.plannedPomodoros = computed.plannedPomodoros;
+}
+// ドラッグの結果[newStart,newEnd)が他のタスクと重なる場合の解決方法を
+// 判定する(状態は変更しない、判定のみ)。
+// - "none": 誰とも重ならない。
+// - "swap": 重なる相手がちょうど1件かつ、新しい範囲がその相手の範囲と
+//   完全に一致する(=入れ替えを意図したドラッグとみなす)。
+// - "push": 重なった相手を移動方向へ隙間なく順に押し出す(玉突きで連鎖する
+//   ことがある)。tasksは元々互いに重ならない前提(hasOverlapで担保済み)
+//   なので、境界(boundary)より前に食い込む相手だけを順に押せば連鎖も
+//   正しく解決できる。
+// - "reject": 押し出した結果0:00〜24:00の範囲をはみ出す(操作を取り消す)。
+function resolveDragOverlap(tasks, movingTaskId, newStart, newEnd, direction) {
+  const others = tasks.filter(t => t.id !== movingTaskId);
+  const overlapping = others.filter(t => toMinutes(t.startTime) < newEnd && newStart < toMinutes(t.endTime));
+  if (!overlapping.length) return { kind: "none" };
+  if (
+    overlapping.length === 1 &&
+    toMinutes(overlapping[0].startTime) === newStart &&
+    toMinutes(overlapping[0].endTime) === newEnd
+  ) {
+    return { kind: "swap", otherId: overlapping[0].id };
+  }
+  const sorted = [...others].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  const updates = [];
+  if (direction === "later") {
+    let boundary = newEnd;
+    for (const t of sorted) {
+      const tStart = toMinutes(t.startTime), tEnd = toMinutes(t.endTime);
+      if (tEnd <= newStart) continue; // newStartより完全に前、無関係
+      if (tStart >= boundary) break; // これ以降(時刻順で後ろ)はもう重ならない
+      const dur = tEnd - tStart;
+      const pushedStart = boundary, pushedEnd = boundary + dur;
+      if (pushedEnd > 24 * 60) return { kind: "reject" };
+      updates.push({ id: t.id, startMin: pushedStart, endMin: pushedEnd });
+      boundary = pushedEnd;
+    }
+  } else {
+    let boundary = newStart;
+    for (const t of [...sorted].reverse()) {
+      const tStart = toMinutes(t.startTime), tEnd = toMinutes(t.endTime);
+      if (tStart >= newEnd) continue; // newEndより完全に後ろ、無関係
+      if (tEnd <= boundary) break;
+      const dur = tEnd - tStart;
+      const pushedEnd = boundary, pushedStart = boundary - dur;
+      if (pushedStart < 0) return { kind: "reject" };
+      updates.push({ id: t.id, startMin: pushedStart, endMin: pushedEnd });
+      boundary = pushedStart;
+    }
+  }
+  return { kind: "push", updates };
+}
+// ドラッグ確定時の適用処理。resolveDragOverlapの判定に従って、必要なら
+// 衝突相手も一緒に動かした上で、ドラッグしたタスク自身の時刻も書き換える。
+function applyDragResult(state, dayKey, taskId, newStart, newEnd, direction) {
+  const day = state.days[dayKey]; if (!day) return { ok: false };
+  const resolution = resolveDragOverlap(day.tasks, taskId, newStart, newEnd, direction);
+  if (resolution.kind === "reject") return { ok: false };
+  if (resolution.kind === "swap") {
+    const movingTask = day.tasks.find(t => t.id === taskId);
+    const origStart = toMinutes(movingTask.startTime), origEnd = toMinutes(movingTask.endTime);
+    setTaskTimeRange(state, dayKey, resolution.otherId, origStart, origEnd);
+  } else if (resolution.kind === "push") {
+    for (const u of resolution.updates) setTaskTimeRange(state, dayKey, u.id, u.startMin, u.endMin);
+  }
+  setTaskTimeRange(state, dayKey, taskId, newStart, newEnd);
+  return { ok: true };
+}
+function toggleTaskComplete(state, dayKey, taskId) {
+  const day = state.days[dayKey]; if (!day) return;
+  const task = day.tasks.find(t => t.id === taskId); if (!task) return;
+  task.completed = !task.completed;
+}
+function addActualMinutes(state, dayKey, taskId, minutes) {
+  const day = state.days[dayKey]; if (!day) return;
+  const task = day.tasks.find(t => t.id === taskId); if (!task) return;
+  task.actualMinutes += minutes;
+}
+function buildTagPath(parent, name) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("タグ名を入力してください");
+  return parent ? `${parent}/${trimmed}` : trimmed;
+}
+function addTagDefinition(state, parent, name) {
+  const path = buildTagPath(parent, name);
+  if (state.tags.includes(path)) throw new Error("同じ名前のタグが既にあります");
+  state.tags.push(path);
+  state.tags.sort();
+}
+// 自己/子孫を親にする(循環参照)・リネーム後のパスが無関係な既存タグと
+// 衝突する場合はそれぞれ例外を投げる。成功時は影響した全タグの
+// oldPath→newPathの対応をMapで返す(現状は呼び出し元では使っていないが、
+// タグ変更後に他の一時状態を追随させたくなった場合の拡張ポイントとして
+// 残している)。
+function renameTagCascade(state, oldPath, newPath) {
+  if (newPath === oldPath) return new Map();
+  if (newPath === oldPath || newPath.startsWith(oldPath + "/")) {
+    throw new Error("配下のタグを親にすることはできません");
+  }
+  const affected = state.tags.filter(t => t === oldPath || t.startsWith(oldPath + "/"));
+  const renameMap = new Map();
+  for (const tag of affected) {
+    const renamed = newPath + tag.slice(oldPath.length);
+    if (state.tags.includes(renamed) && !affected.includes(renamed)) {
+      throw new Error(`「${renamed}」は既に存在します`);
+    }
+    renameMap.set(tag, renamed);
+  }
+  state.tags = state.tags.map(t => renameMap.get(t) || t);
+  for (const dayKey in state.days) {
+    for (const task of state.days[dayKey].tasks) {
+      task.tags = task.tags.map(t => renameMap.get(t) || t);
+    }
+  }
+  state.tags.sort();
+  return renameMap;
+}
+function isTagRecentlyUsed(state, path, withinDays = TAG_STALE_AFTER_DAYS) {
+  const cutoff = addDays(todayKey(), -withinDays);
+  for (const dayKey in state.days) {
+    if (dayKey < cutoff) continue;
+    if (state.days[dayKey].tasks.some(t => t.tags && t.tags.includes(path))) return true;
+  }
+  return false;
+}
+// 「未使用」のバッジは、自分自身だけでなく配下のタグも含めて全て未使用の
+// 場合だけ表示する。子タグが最近使われているのに親タグを「未使用」と
+// 表示すると、その分類全体が使われていないという誤解を招くため。
+function isTagSubtreeStale(state, path, withinDays = TAG_STALE_AFTER_DAYS) {
+  const subtree = [path, ...state.tags.filter(t => t.startsWith(path + "/"))];
+  return subtree.every(p => !isTagRecentlyUsed(state, p, withinDays));
+}
+// 中間ノードだけ削除すると子タグが実績集計に「幽霊祖先」として残るため、
+// サブツリーごとカスケード削除する。
+function removeTagCascade(state, path) {
+  const targets = state.tags.filter(t => t === path || t.startsWith(path + "/"));
+  state.tags = state.tags.filter(t => !targets.includes(t));
+  for (const dayKey in state.days) {
+    for (const task of state.days[dayKey].tasks) {
+      if (task.tags && task.tags.some(t => targets.includes(t))) {
+        task.tags = task.tags.filter(t => !targets.includes(t));
+      }
+    }
+  }
+  return targets;
+}
+function countTasksUsingTags(state, paths) {
+  let count = 0;
+  for (const dayKey in state.days) {
+    for (const task of state.days[dayKey].tasks) {
+      if (task.tags && task.tags.some(t => paths.includes(t))) count += 1;
+    }
+  }
+  return count;
+}
+// dayEntriesは複数日ぶんのエントリの配列(全期間集計のため)。ただし
+// 「全期間」は保持期間(既定6か月、state.archive参照)より前の月は
+// 月次サマリーに圧縮されタグ別の内訳を失っているため、実際には
+// 「保持期間内の全期間」が対象になる(呼び出し側・READMEで明記)。
+function computeTagAggregates(dayEntries) {
+  const totals = {};
+  const add = (path, planned, actual) => {
+    if (!totals[path]) totals[path] = { planned: 0, actual: 0 };
+    totals[path].planned += planned;
+    totals[path].actual += actual;
+  };
+  for (const entry of dayEntries) {
+    for (const t of entry.tasks) {
+      const tags = t.tags && t.tags.length ? t.tags : ["(タグ無し)"];
+      const targets = new Set();
+      for (const tag of tags) {
+        const segs = tag.split("/");
+        for (let i = 1; i <= segs.length; i++) targets.add(segs.slice(0, i).join("/"));
+      }
+      for (const path of targets) add(path, t.plannedMinutes, t.actualMinutes);
+    }
+  }
+  return totals;
+}
+function computeCompletionRate(dayEntry) {
+  if (!dayEntry || dayEntry.tasks.length === 0) return 0;
+  return dayEntry.tasks.filter(t => t.completed).length / dayEntry.tasks.length;
+}
+function finalizeDay(state, dayKey) {
+  const entry = state.days[dayKey];
+  if (!entry || entry.finalized) return;
+  const doneCount = entry.tasks.filter(t => t.completed).length;
+  const achieved = entry.tasks.length > 0 && doneCount >= state.settings.streakThreshold;
+  if (achieved) {
+    const prevDay = addDays(dayKey, -1);
+    const continuous = state.streak.lastAchievedDay === prevDay;
+    state.streak.current = continuous ? state.streak.current + 1 : 1;
+    state.streak.lastAchievedDay = dayKey;
+    state.streak.longest = Math.max(state.streak.longest, state.streak.current);
+  } else {
+    state.streak.current = 0;
+  }
+  entry.finalized = true;
+}
+// ---- 4a. アーカイブ(state.daysの無制限な蓄積を防ぐ) ----
+// 日単位ではなく月単位で丸ごと圧縮する。同じ月の中に「詳細が残っている日」と
+// 「消えた日」が混在すると、カレンダーのドット表示や実績タブの整合性が
+// 崩れるため。タグ別の内訳は持たず合計のみ(必要になれば拡張ポイント)。
+function rollMonthIntoSummary(state, monthKey) {
+  const summary = state.archive.monthlySummaries[monthKey]
+    || { plannedMinutes: 0, actualMinutes: 0, completedCount: 0, totalCount: 0 };
+  for (const dayKey in state.days) {
+    if (!dayKey.startsWith(monthKey)) continue;
+    for (const t of state.days[dayKey].tasks) {
+      summary.plannedMinutes += t.plannedMinutes;
+      summary.actualMinutes += t.actualMinutes;
+      summary.totalCount += 1;
+      if (t.completed) summary.completedCount += 1;
+    }
+    delete state.days[dayKey];
+  }
+  state.archive.monthlySummaries[monthKey] = summary;
+}
+function archiveOldMonths(state, todayDayKey, retentionMonths = DAY_DETAIL_RETENTION_MONTHS) {
+  const [ty, tm] = todayDayKey.split("-").map(Number);
+  const keepFrom = new Date(ty, tm - 1 - (retentionMonths - 1), 1);
+  const keepFromKey = `${keepFrom.getFullYear()}-${pad2(keepFrom.getMonth() + 1)}`;
+  const monthsToArchive = new Set();
+  for (const dayKey in state.days) {
+    const monthKey = dayKey.slice(0, 7);
+    if (monthKey < keepFromKey) monthsToArchive.add(monthKey);
+  }
+  for (const monthKey of monthsToArchive) rollMonthIntoSummary(state, monthKey);
+}
+function computeAllTimeTotals(state) {
+  let actualMinutes = 0, completedCount = 0;
+  for (const summary of Object.values(state.archive.monthlySummaries)) {
+    actualMinutes += summary.actualMinutes;
+    completedCount += summary.completedCount;
+  }
+  for (const entry of Object.values(state.days)) {
+    for (const t of entry.tasks) {
+      actualMinutes += t.actualMinutes;
+      if (t.completed) completedCount += 1;
+    }
+  }
+  return { actualMinutes, completedCount };
+}
+
+// lastOpenedDayを確定対象にする(「昨日」固定だと数日開かなかった場合に中間の日を誤って扱う)。
+// selectedDate(表示中の日付)には関知しない。呼び出し側が戻り値を見て
+// 「実際の今日を見ていた場合だけ」selectedDateを追従させる(暗黙のグローバル
+// 参照にすると将来の呼び出し順序変更に弱くなるため、明示的な連携にしている)。
+function rolloverIfNeeded(state, now = new Date()) {
+  const today = todayKey(now);
+  if (state.lastOpenedDay !== today) {
+    const prevDay = state.lastOpenedDay;
+    finalizeDay(state, prevDay);
+    pruneTaskTitleStats(state, today);
+    archiveOldMonths(state, today);
+    state.pausedSessions = {}; // 前日の中断中セッションは新しい日には引き継がない
+    state.lastOpenedDay = today;
+    ensureDay(state, today);
+    saveState(state);
+    return { rolled: true, prevDay, today };
+  }
+  ensureDay(state, today);
+  return { rolled: false, today };
+}
+
+// ==== 4b. Undo/Redo(タスクの追加・編集・削除・ドラッグ移動の取り消し) ====
+// state.days(タスクの実データ)だけを対象にする。タグ・設定・streak・
+// アーカイブは対象外(タグ削除は影響件数を示す確認ダイアログ、設定は
+// 保存前に見直せる専用フォームというように、それぞれ別の安全策を既に
+// 持っているため、ここで扱う対象を広げて「取り消しの対象が何なのか」の
+// 直感を壊さないようにしている)。永続化はせず(localStorageには積まない)、
+// タブを閉じたりリロードしたりすると履歴は失われる仕様。
+const UNDO_MAX_STEPS = 30;
+let taskUndoStack = [];
+let taskRedoStack = [];
+function snapshotDays() { return JSON.parse(JSON.stringify(state.days)); }
+// 実際に変更が起きる直前に必ず呼ぶ(呼んだ後に例外で失敗した場合は
+// discardPendingUndoSnapshot()で取り消す)。新しい変更をしたら redo 履歴は
+// 意味を失うため破棄する。
+function recordUndoPoint() {
+  taskUndoStack.push(snapshotDays());
+  if (taskUndoStack.length > UNDO_MAX_STEPS) taskUndoStack.shift();
+  taskRedoStack = [];
+}
+// recordUndoPoint()の直後に実際の変更処理が例外を投げて失敗した場合、
+// 「何も変わっていないのにUndoできる」という空振りの履歴が残ってしまう
+// ため、呼び出し側のcatchで必ずこれを呼んで取り消す。
+function discardPendingUndoSnapshot() { taskUndoStack.pop(); }
+function performTaskUndo() {
+  if (!taskUndoStack.length) return;
+  taskRedoStack.push(snapshotDays());
+  state.days = taskUndoStack.pop();
+  saveState(state);
+  renderAll();
+}
+function performTaskRedo() {
+  if (!taskRedoStack.length) return;
+  taskUndoStack.push(snapshotDays());
+  state.days = taskRedoStack.pop();
+  saveState(state);
+  renderAll();
+}
+
+// ==== 5. タイマーエンジン(壁時計ベース) ====
+let audioCtx = null;
+const AudioCue = {
+  unlock() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  },
+  beep(freq = 880, duration = 0.18) {
+    if (!audioCtx) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration + 0.02);
+    } catch (e) { console.error("beep failed", e); }
+  },
+};
+
+let tickHandle = null;
+function ensureTickTimer() {
+  if (tickHandle) return;
+  tickHandle = setInterval(tick, 500);
+}
+function stopTickTimer() {
+  if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+}
+// setIntervalのtick回数は信用せず、endAt(壁時計上の終了予定時刻)との差分だけで判定する。
+// バックグラウンド遷移時のスロットリング/停止に対応するため。
+function tick() {
+  if (!state.activeSession) { stopTickTimer(); return; }
+  if (state.activeSession.paused) return;
+  const remaining = state.activeSession.endAt - Date.now();
+  if (remaining <= 0) { completeSession(); return; }
+  renderFocusView();
+}
+function startSession(taskId, kind) {
+  const minutes = kind === "focus" ? state.settings.focusMinutes : state.settings.breakMinutes;
+  // dayKeyはセッション開始時点の実際の今日を記録する(タスク自体は必ず
+  // todayKeyEntryから選ばれるため常に正しい)。日を跨いで実行中/一時停止中の
+  // まま残った場合、addActualMinutesの対象日をtodayKey()の再評価(=日付が
+  // 変わった後の新しい日)に任せると、タスクが属する古い日には見つからず
+  // 実績が消える(過去に実際に起きたバグ)。セッションに紐付いたこの
+  // dayKeyを最後まで使うことで、日を跨いでも元のタスクに正しく積算される。
+  state.activeSession = { taskId, dayKey: todayKey(), kind, endAt: Date.now() + minutes * 60000, paused: false, pausedRemainingMs: null };
+  AudioCue.unlock(); // ユーザー操作(このタップ)の中で生成・resumeする必要がある
+  saveState(state);
+  renderAll();
+  ensureTickTimer();
+}
+function pauseSession() {
+  if (!state.activeSession || state.activeSession.paused) return;
+  state.activeSession.pausedRemainingMs = state.activeSession.endAt - Date.now();
+  state.activeSession.paused = true;
+  saveState(state); renderAll();
+}
+function resumeSession() {
+  if (!state.activeSession || !state.activeSession.paused) return;
+  state.activeSession.endAt = Date.now() + state.activeSession.pausedRemainingMs;
+  state.activeSession.paused = false;
+  state.activeSession.pausedRemainingMs = null;
+  saveState(state); renderAll(); ensureTickTimer();
+}
+// 集中フェーズを手動で終了する際に、経過分を切り捨てず記録するための計算。
+// 自然完了(completeSession)は常にfocusMinutes固定分を加算するのに対し、
+// こちらは実測の経過時間をMath.roundで丸める(体感のズレを避けるため)。
+function getSessionElapsedFocusMinutes(session) {
+  if (!session || session.kind !== "focus") return 0;
+  const totalMs = state.settings.focusMinutes * 60000;
+  const remainingMs = session.paused ? session.pausedRemainingMs : session.endAt - Date.now();
+  const elapsedMs = totalMs - Math.max(0, remainingMs);
+  return Math.max(0, Math.round(elapsedMs / 60000));
+}
+function finishSession(elapsedMinutes) {
+  const session = state.activeSession;
+  if (!session) return;
+  if (session.kind === "focus" && elapsedMinutes > 0) {
+    addActualMinutes(state, session.dayKey, session.taskId, elapsedMinutes);
+  }
+  state.activeSession = null;
+  saveState(state); renderAll();
+}
+function completeSession() {
+  const session = state.activeSession;
+  if (!session) return;
+  if (session.kind === "focus") {
+    addActualMinutes(state, session.dayKey, session.taskId, state.settings.focusMinutes);
+  }
+  AudioCue.beep(session.kind === "focus" ? 660 : 990);
+  if (session.kind === "focus") {
+    state.activeSession = {
+      taskId: session.taskId, dayKey: session.dayKey, kind: "break",
+      endAt: Date.now() + state.settings.breakMinutes * 60000,
+      paused: false, pausedRemainingMs: null,
+    };
+  } else {
+    state.activeSession = null;
+  }
+  saveState(state);
+  renderAll();
+}
+
+// ==== 6. レンダリング ====
+let currentView = "today";
+let focusSelectedTaskId = null;
+// 「予定」タブでカレンダーから選んだ表示対象の日付。ページ読み込みのたびに
+// 必ず実際の今日にリセットされ、localStorageには保存しない。
+// 集中/実績タブ・タイマー・streak判定は常に実際の今日(todayKey())を使い、
+// この変数の影響を受けない。
+let selectedDate = todayKey();
+let calendarViewMonth = null; // {year, month} カレンダーモーダルを開いた時に設定
+// タスクの新規作成・編集を共用する#taskEditModalの状態。editingTaskIdが
+// nullなら新規作成モード(dayKeyはeditingTaskDayKeyのまま作成先として使う)、
+// それ以外は編集モード。モーダルは排他的にしか開けないため(他のモーダルの
+// 全画面オーバーレイに遮られる)、taskFormTagsを追加・編集の両方で使い回す。
+let editingTaskId = null;
+let editingTaskDayKey = null;
+let taskFormTags = new Set();
+let editingTagPath = null; // タグ管理モーダルでリネーム編集中のタグパス(nullなら新規作成モード)
+let statsTagFilter = new Set(); // 実績タブのタグ別集計で絞り込み中のタグ(空なら全件表示)
+let expandedTimelineTaskIds = new Set(); // タイムラインでタップして展開中の短いタスクのID
+
+function getEntryForDate(dayKey) { return state.days[dayKey] || { tasks: [], finalized: false }; }
+function getTodayEntry() { return getEntryForDate(todayKey()); }
+function getSelectedEntry() { return getEntryForDate(selectedDate); }
+function incompleteTasksToday() { return getTodayEntry().tasks.filter(t => !t.completed); }
+
+function suggestTaskId() {
+  const tasks = incompleteTasksToday();
+  if (tasks.length === 0) return null;
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const current = tasks.find(t => toMinutes(t.startTime) <= nowMin && nowMin < toMinutes(t.endTime));
+  if (current) return current.id;
+  const upcoming = tasks.filter(t => toMinutes(t.startTime) >= nowMin)
+    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  return (upcoming[0] || tasks[0]).id;
+}
+function computeNowStatus(dayEntry) {
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const active = dayEntry.tasks.find(t => toMinutes(t.startTime) <= nowMin && nowMin < toMinutes(t.endTime));
+  if (active) return { type: "active", task: active };
+  const upcoming = dayEntry.tasks.filter(t => toMinutes(t.startTime) >= nowMin)
+    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  return { type: "free", next: upcoming[0] || null };
+}
+
+function renderAll() {
+  renderHeaderStreak();
+  if (currentView === "today") renderTodayView();
+  if (currentView === "focus") renderFocusView();
+  if (currentView === "stats") renderStatsView();
+}
+function renderHeaderStreak() {
+  const el = document.getElementById("headerStreak");
+  if (el) el.textContent = state.streak.current > 0 ? `🔥${state.streak.current}` : "";
+  renderUndoRedoButtons();
+}
+// タスクの追加・編集・削除・チェック・ドラッグ移動のいずれかが起きた
+// 直後は必ずrenderHeaderStreak()も呼ばれる(既存の各ハンドラの慣習)ため、
+// そこに相乗りしてボタンの有効/無効を最新化する。専用の再描画呼び出しを
+// 各所に追加する必要が無い。
+function renderUndoRedoButtons() {
+  const undoBtn = document.getElementById("undoBtn");
+  const redoBtn = document.getElementById("redoBtn");
+  if (undoBtn) undoBtn.disabled = taskUndoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = taskRedoStack.length === 0;
+}
+
+function tagChipLabel(path) { return path.split("/").pop(); }
+// インデントだけだと親子関係が追いにくいため、祖先パスを薄い文字で
+// パンくず形式(祖先パスを毎行繰り返す)は名前が長くなると冗長になるため、
+// treeコマンド風の罫線記号(├──/└──/│)でインデントを表現する。
+// tagPathsに含まれるタグの祖先パスが実タグとして存在しない場合(タグ名に
+// "/"を直接含めて一気に深い階層を作れる仕様のため起こり得る)も、暗黙の
+// 中間ノードとして木構造に含める(real:falseでマークし、行の表示側で
+// 編集/削除ボタンを出さない・薄い表示にする、等の判断に使う)。
+function buildTagTree(tagPaths) {
+  const allPaths = new Set();
+  for (const t of tagPaths) {
+    const segs = t.split("/");
+    for (let i = 1; i <= segs.length; i++) allPaths.add(segs.slice(0, i).join("/"));
+  }
+  const sorted = [...allPaths].sort();
+  const nodeMap = new Map();
+  const roots = [];
+  for (const path of sorted) {
+    const segs = path.split("/");
+    const node = { path, name: segs[segs.length - 1], children: [], real: tagPaths.includes(path) };
+    nodeMap.set(path, node);
+    const parentPath = segs.slice(0, -1).join("/");
+    if (parentPath && nodeMap.has(parentPath)) nodeMap.get(parentPath).children.push(node);
+    else roots.push(node);
+  }
+  return roots;
+}
+// renderRow(node, treePrefixHtml)を各ノードについて呼び、木の罫線記号を
+// 4文字幅の等幅フォント(.tag-tree-prefix)で描画する(可変幅フォントでも
+// 罫線がズレないようにするため)。
+function renderTagTreeRows(nodes, prefix, renderRow) {
+  let html = "";
+  nodes.forEach((node, i) => {
+    const isLast = i === nodes.length - 1;
+    const connector = prefix + (isLast ? "└── " : "├── ");
+    const childPrefix = prefix + (isLast ? "    " : "│   ");
+    html += renderRow(node, connector);
+    html += renderTagTreeRows(node.children, childPrefix, renderRow);
+  });
+  return html;
+}
+function formatHHMM(totalMin) {
+  const clamped = Math.max(0, Math.min(24 * 60, totalMin));
+  return `${pad2(Math.floor(clamped / 60))}:${pad2(clamped % 60)}`;
+}
+// 展開中の短いタスクの周辺を「比例拡大」するための変換。
+// 各展開タスクについて、それが属する時計の1時間(floor(taskStart/60)*60
+// 〜+60。タスクがその1時間をはみ出す場合はタスク全体を含むまで広げる)を
+// 「窓」とし、窓全体を「タスク自身の高さがFULL_CONTENT_PXになる」ような
+// 係数k(=FULL_CONTENT_PX/自然な高さ)で一様に引き伸ばす。窓はタスク自身の
+// 開始時刻(taskStart)を不動点として拡大する(タスクの上端の画面上の位置は
+// 変わらない。以前は「タスク自身の後ろだけを固定量押し下げる」方式だった
+// ため、タスク前後の実時間比がタスクの展開で崩れて見える問題があった:
+// 例えば30分タスクを展開すると、直前の30分ぶんの間隔はそのままなのに
+// タスク自身だけ2倍になり、本来1:1のはずの比率が1:2に見えてしまっていた)。
+// 窓は前後の既存タスク(または直前の展開領域の終端)を越えて広がらないよう
+// クリップし、複数の展開領域が重ならないようにする。
+//
+// 【実際に踏んだバグとその修正】taskStart(不動点)からwsまで後方に伸びる
+// ぶん、ws地点の画面上の位置は(伸びていない場合に比べて)手前にずれる。
+// この「wsのずれ」を、ws未満(=窓より前の内容: 既存の時刻目盛りや別の
+// タスク)に伝搬させずにいたところ、ws地点で不連続なジャンプが生じ、
+// 「窓の直前の間隔がつぶれて見える」バグになっていた(例: 14:30〜15:00に
+// タスクを置いたまま15:30〜16:00のタスクを展開すると、15:00のwsが
+// 手前にずれる一方で14:30のタスクの位置は動かないため、両者の間隔が
+// 潰れて14:30のタスクが15:00から始まるように見えた)。wsにおけるこの
+// ずれ量(offsetBeforeWs)を計算し、窓より前の内容全体(直前の展開領域の
+// 終端、または無ければ0:00まで)に一様に適用することで、窓の直前で
+// 不連続にならないようにしている。
+// 窓の端(ws/we)に他の(独立して展開中ではない)タスクがまたがって食い込んで
+// いる場合、そのタスクをはみ出した先の時間まで丸ごと巻き込むよう広げる
+// (安定するまで連鎖的に繰り返す。複数の短いタスクが隙間なく並んでいる
+// 場合、連鎖的に全部が巻き込まれることもある)。独立して展開中の別タスクは
+// 飲み込まず素通りする(重なりは後段のクリップで防ぐ)。
+// 【実際に踏んだバグ】この巻き込み処理が無いと、展開したタスクの隣に別の
+// (展開していない)タスクがちょうど窓の境界をまたいで存在する場合、
+// 窓がそのタスクの手前で不必要に狭くクリップされてしまい、「1時間が
+// 2倍に展開しきらない」「隣のタスクが展開されない(高さも中途半端になる)」
+// という指摘を受けた。
+function sweepTimelineWindow(ws, we, selfTask, sortedTasks) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const o of sortedTasks) {
+      if (o === selfTask) continue;
+      const oStart = toMinutes(o.startTime), oEnd = toMinutes(o.endTime);
+      const oNaturalHeight = (oEnd - oStart) * PX_PER_MIN;
+      const oIsExpanded = oNaturalHeight < FULL_CONTENT_PX && expandedTimelineTaskIds.has(o.id);
+      if (oIsExpanded) continue;
+      if (oStart < we && oEnd > we) {
+        const extended = Math.max(we, Math.ceil(oEnd / 60) * 60);
+        if (extended > we) { we = extended; changed = true; }
+      }
+      if (oStart < ws && oEnd > ws) {
+        const extended = Math.min(ws, Math.floor(oStart / 60) * 60);
+        if (extended < ws) { ws = extended; changed = true; }
+      }
+    }
+  }
+  return { ws, we };
+}
+function computeTimelineBreakpoints(sortedTasks) {
+  const regions = []; // { ws, we, k, taskStart, offsetBefore, offsetBeforeWs, offsetAfter, driverTaskId }(taskStart昇順)
+  let offset = 0; // 通常スケールからの累積オフセット
+  let boundary = 0; // 直前の展開領域の終端(これより前には次の領域は広がれない)
+  for (let i = 0; i < sortedTasks.length; i++) {
+    const t = sortedTasks[i];
+    const taskStart = toMinutes(t.startTime), taskEnd = toMinutes(t.endTime);
+    const naturalHeight = (taskEnd - taskStart) * PX_PER_MIN;
+    const isExpanded = naturalHeight < FULL_CONTENT_PX && expandedTimelineTaskIds.has(t.id);
+    if (!isExpanded) continue;
+    const k = FULL_CONTENT_PX / naturalHeight;
+    const hourStart = Math.floor(taskStart / 60) * 60;
+    let ws = hourStart;
+    // タスクが時計の1時間をまたぐ場合、はみ出した側の時間帯も丸ごと含める
+    // (Math.ceilで終了時刻を含む時間の境目まで切り上げる)。単に
+    // taskEndちょうどまでしか広げないと、またいだ先の時間帯がほんの一部
+    // (タスクがはみ出した分だけ)しか比例拡大されず、ユーザーの期待
+    // (またいだ両方の時間帯が丸ごと2倍になる)と食い違うバグがあった。
+    let we = Math.max(hourStart + 60, Math.ceil(taskEnd / 60) * 60);
+    ({ ws, we } = sweepTimelineWindow(ws, we, t, sortedTasks));
+    // 独立して展開中の別タスクとは重ならないようクリップする(巻き込みは
+    // しない。それぞれの領域が別々のk倍率を持ちうるため)。
+    for (const o of sortedTasks) {
+      if (o === t) continue;
+      const oStart = toMinutes(o.startTime), oEnd = toMinutes(o.endTime);
+      const oNaturalHeight = (oEnd - oStart) * PX_PER_MIN;
+      const oIsExpanded = oNaturalHeight < FULL_CONTENT_PX && expandedTimelineTaskIds.has(o.id);
+      if (!oIsExpanded) continue;
+      if (oStart >= taskEnd) we = Math.min(we, oStart);
+      if (oEnd <= taskStart) ws = Math.max(ws, oEnd);
+    }
+    ws = Math.max(ws, boundary); // 直前の展開領域の終端も越えない
+    ws = Math.min(ws, taskStart); // 安全側クランプ: タスク自身は必ず窓に含む
+    we = Math.max(we, taskEnd); // 安全側クランプ
+    const offsetBefore = offset;
+    const taskTopY = taskStart * PX_PER_MIN + offsetBefore; // タスク自身の(不動の)画面上の開始位置
+    const posWe = taskTopY + (we - taskStart) * PX_PER_MIN * k;
+    const offsetAfter = posWe - we * PX_PER_MIN;
+    const posWs = taskTopY + (ws - taskStart) * PX_PER_MIN * k;
+    const offsetBeforeWs = posWs - ws * PX_PER_MIN;
+    regions.push({ ws, we, k, taskStart, offsetBefore, offsetBeforeWs, offsetAfter, driverTaskId: t.id });
+    offset = offsetAfter;
+    boundary = we;
+  }
+  return regions;
+}
+// 窓[ws,we]の内部は「taskTopY(=taskStart*PX_PER_MIN+offsetBefore、タスク自身の
+// 不動の開始位置)を基準に、taskStartからの差分をk倍する」という単一の線形式で
+// 一貫している(taskStart自身では常にtaskTopYに一致し、展開の影響を受けない)。
+// ws未満は、この窓自身の後方への伸びぶん(offsetBeforeWs)を織り込んだ値を使う
+// (offsetBeforeではなくoffsetBeforeWsを使うのがポイント。詳細は上のコメント参照)。
+function minuteToY(minute, regions) {
+  for (const r of regions) {
+    if (minute < r.ws) return minute * PX_PER_MIN + r.offsetBeforeWs;
+    if (minute <= r.we) {
+      const taskTopY = r.taskStart * PX_PER_MIN + r.offsetBefore;
+      return taskTopY + (minute - r.taskStart) * PX_PER_MIN * r.k;
+    }
+  }
+  const last = regions[regions.length - 1];
+  return minute * PX_PER_MIN + (last ? last.offsetAfter : 0);
+}
+// minuteToYの逆変換。窓の内部は線形(かつk倍のため必ず単射)なので、以前の
+// 「不連続ジャンプの内側が実在しない時刻にデコードされる」問題は発生しない。
+function yToMinute(y, regions) {
+  for (const r of regions) {
+    const taskTopY = r.taskStart * PX_PER_MIN + r.offsetBefore;
+    const wsY = r.ws * PX_PER_MIN + r.offsetBeforeWs;
+    if (y < wsY) return (y - r.offsetBeforeWs) / PX_PER_MIN;
+    const weY = taskTopY + (r.we - r.taskStart) * PX_PER_MIN * r.k;
+    if (y <= weY) return r.taskStart + (y - taskTopY) / (PX_PER_MIN * r.k);
+  }
+  const last = regions[regions.length - 1];
+  return (y - (last ? last.offsetAfter : 0)) / PX_PER_MIN;
+}
+function timelineTotalExtra(regions) {
+  return regions.length ? regions[regions.length - 1].offsetAfter : 0;
+}
+// 高さが1時間ぶん(FULL_CONTENT_PX)以上ならタイトル+時刻/実績+タグ、
+// 未満ならタイトルのみに出し分ける。人工的な最低高さでクランプはしない
+// (隣接する短いタスク同士の見た目が実際の時間関係と矛盾して重なって
+// 見えるバグを避けるため)。短いタスクはタップで一時的に展開でき、
+// 展開すると高さがFULL_CONTENT_PXまで広がり(幅は変えない)、その分
+// 後続のタイムライン全体が押し下げられる(computeTimelineBreakpoints参照)。
+function timelineTaskBoxHtml(t, isToday, top, height, isExpanded, driverTaskId) {
+  const showFull = height >= FULL_CONTENT_PX;
+  // 今日のタイムラインは箱本体タップ=集中タブへ選択遷移、他日は箱本体タップ=編集
+  // (集中タブは常に実際の今日しか扱わないため、他日のタスクを「集中で選択」
+  // しても意味が無い。他日での編集手段はこのタップが唯一になる)。短い箱は
+  // 情報が見えていない状態でいきなり選択/編集に飛ぶと事故りやすいため、
+  // まずタップで展開させる。
+  const boxAction = !showFull ? "timeline:toggle-expand" : (isToday ? "task:select-focus" : "task:edit-open");
+  const tagsHtml = (showFull && t.tags && t.tags.length)
+    ? `<div class="task-tags">${t.tags.map(tag => `<span class="chip static">🏷️${escapeHtml(tagChipLabel(tag))}</span>`).join("")}</div>`
+    : "";
+  // 他日では箱本体タップ(task:edit-open)と同じ動作になり機能的には冗長だが、
+  // 今日/他日で箱の見た目が変わらないよう(統一感のため)常時表示している。
+  const editBtn = showFull
+    ? `<button class="icon-btn timeline-edit-btn" data-action="task:edit-open" data-id="${t.id}" data-day="${selectedDate}" aria-label="編集">✏️</button>`
+    : "";
+  // data-idは自分自身(t.id)ではなくdriverTaskId(実際に展開の起点になって
+  // いるタスク)を指す。他の展開タスクの窓に巻き込まれて一緒に拡大されて
+  // いるだけのタスク(自分自身はexpandedTimelineTaskIdsに入っていない)の
+  // 閉じるボタンを押した時、自分自身をトグルしても何も変わらない
+  // (そもそも入っていないため)。実際に展開を解除すべきなのは起点の
+  // タスクの方なので、driverTaskIdを使う(通常の自分自身が展開起点の
+  // 場合はdriverTaskId===t.idなので、これまで通りの挙動になる)。
+  const collapseBtn = isExpanded
+    ? `<button class="icon-btn timeline-collapse-btn" data-action="timeline:toggle-expand" data-id="${driverTaskId}" aria-label="折りたたむ">▲ 閉じる</button>`
+    : "";
+  const expandHint = (!showFull)
+    ? `<span class="timeline-expand-hint">⌄</span>` : "";
+  const body = showFull
+    ? `<div class="timeline-task-title ${t.completed ? "done" : ""}">${escapeHtml(t.title)}</div>
+       <div class="timeline-task-meta">${t.startTime}〜${t.endTime}・実績${formatDuration(t.actualMinutes)}</div>
+       ${tagsHtml}`
+    : `<div class="timeline-task-title compact ${t.completed ? "done" : ""}">${escapeHtml(t.title)}</div>`;
+  // ドラッグの移動・リサイズはポインタの移動量(delta)を実際の開始/終了分
+  // (task.startTime/endTime)に加減するだけで、箱の見た目上の位置は一切
+  // 参照しない(computeDragPreview参照)。そのため展開中(高さが架空)でも
+  // 計算自体は常に正しく、展開中だけリサイズを禁止する理由は無い。箱が
+  // 低すぎる場合だけ、上下のつかみ領域が重なって移動の判定領域が無くなる
+  // ため描画しない(MIN_RESIZE_BOX_PX参照。展開中は常にFULL_CONTENT_PXの
+  // 高さがあるためこの条件には掛からない)。
+  // 展開中は右下に▲閉じるボタンが同時に表示される。ボタンの位置は
+  // 動かさない方針(閉じるボタンを優先)にしたため、代わりに下端ハンドルの
+  // 右側を大きく空けてボタンと重ならないようにする。
+  const resizeHandles = (height >= MIN_RESIZE_BOX_PX)
+    ? `<div class="timeline-resize-handle top" data-resize="top" aria-hidden="true" style="height:${DRAG_EDGE_ZONE_PX}px"></div>
+       <div class="timeline-resize-handle bottom" data-resize="bottom" aria-hidden="true" style="height:${DRAG_EDGE_ZONE_PX}px${isExpanded ? ";right:88px" : ""}"></div>`
+    : "";
+  return `
+    <div class="timeline-task ${t.completed ? "done" : ""}${isExpanded ? " expanded" : ""}" style="top:${top}px;height:${height}px"
+         data-action="${boxAction}" data-id="${t.id}" data-day="${selectedDate}">
+      <label class="timeline-check">
+        <input type="checkbox" data-action="toggle" data-id="${t.id}" ${t.completed ? "checked" : ""}>
+      </label>
+      <div class="timeline-task-body">${body}</div>
+      ${expandHint}
+      ${editBtn}
+      ${collapseBtn}
+      ${resizeHandles}
+    </div>`;
+}
+// ボタンの並び・位置が日付によってガタつかないよう、その日は使わない
+// ボタンも常に同じ位置に置いたままdisabledにする(消してしまうと、
+// 隣のボタンの位置が日付ごとにずれて誤タップしやすくなるため)。
+function renderDateNavHtml() {
+  const [y, m, dNum] = selectedDate.split("-").map(Number);
+  const d = new Date(y, m - 1, dNum);
+  const isToday = selectedDate === todayKey();
+  const compactIds = getSelectedEntry().tasks
+    .filter(t => (toMinutes(t.endTime) - toMinutes(t.startTime)) * PX_PER_MIN < FULL_CONTENT_PX)
+    .map(t => t.id);
+  const hasCompact = compactIds.length > 0;
+  const allExpanded = hasCompact && compactIds.every(cid => expandedTimelineTaskIds.has(cid));
+  return `
+    <div class="date-nav">
+      <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日">◀</button>
+      <span class="date-label">${formatJapaneseDate(d)}</span>
+      <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日">▶</button>
+      <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー">📅</button>
+      <button class="today-jump" data-action="date:today" aria-label="今日に戻る" ${isToday ? "disabled" : ""}>今日</button>
+      <button class="icon-btn date-nav-btn" data-action="timeline:toggle-expand-all"
+        aria-label="${allExpanded ? "短いタスクを全て折りたたむ" : "短いタスクを全て展開する"}" ${hasCompact ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>
+    </div>`;
+}
+function renderTitleHistoryHtml() {
+  const suggestions = getTitleSuggestions(state);
+  if (!suggestions.length) return "";
+  return `<div class="chip-row">${suggestions.map(t =>
+    `<span class="chip" data-action="title-history:pick" data-title="${escapeHtml(t)}">${escapeHtml(t)}</span>`
+  ).join("")}</div>`;
+}
+// タスク作成/編集モーダルで使い回すタグピッカー。selectedSetとactionを
+// 渡すことで呼び出し元の選択状態(taskFormTags)を混線させずに切り替える。
+function renderTagPickerHtml(selectedSet, action) {
+  if (!state.tags.length) {
+    // モーダルは排他的にしか開けないため、ここから別のモーダル(タグ管理)を
+    // 開くショートカットは置かない(以前はここに設置していたが、タスク
+    // モーダルを開いたままタグ管理を開けてしまい前提が崩れる不具合があった)。
+    return `<div class="chip-hint">タグはまだありません。ヘッダーの🏷️から作成できます。</div>`;
+  }
+  return `<div class="chip-row">${state.tags.map(tag =>
+    `<span class="chip${selectedSet.has(tag) ? " selected" : ""}" data-action="${action}" data-tag="${escapeHtml(tag)}">🏷️${escapeHtml(tagChipLabel(tag))}</span>`
+  ).join("")}</div>`;
+}
+function renderNowBanner() {
+  const el = document.getElementById("nowBanner");
+  if (!el) return;
+  const isToday = selectedDate === todayKey();
+  if (isToday) {
+    const status = computeNowStatus(getTodayEntry());
+    if (status.type === "active") {
+      const doneBadge = status.task.completed ? "(完了済み)" : "";
+      el.className = "now-banner active";
+      el.innerHTML = `🟢 今: ${escapeHtml(status.task.title)}(${status.task.startTime}〜${status.task.endTime}) ${doneBadge}`;
+      // 現在進行中のタスクがある場合だけ、バナー自体をタップして集中タブへ
+      // 選択遷移できるようにする(次の予定/空き時間バナーはタップ不可のまま)。
+      el.dataset.action = "task:select-focus";
+      el.dataset.id = status.task.id;
+    } else if (status.next) {
+      el.className = "now-banner";
+      el.innerHTML = `☕ 今は空き時間です。次は ${status.next.startTime}〜 ${escapeHtml(status.next.title)}`;
+      delete el.dataset.action; delete el.dataset.id;
+    } else {
+      el.className = "now-banner";
+      el.innerHTML = `🌤 本日の残りの予定はありません`;
+      delete el.dataset.action; delete el.dataset.id;
+    }
+    return;
+  }
+  // 他日は「今」の概念が無いため、その日の予定件数・完了数だけの
+  // 簡易サマリーを表示する(過去日なら実績の目安、未来日なら予定件数の
+  // 目安になる)。日付ナビと同じsticky領域に常に何か表示しておくことで、
+  // 日付を切り替えるたびにヘッダーの高さが変わってガタつくのも防げる。
+  const tasks = getSelectedEntry().tasks;
+  el.className = "now-banner";
+  el.innerHTML = tasks.length
+    ? `📋 ${tasks.length}件の予定(完了${tasks.filter(t => t.completed).length}件)`
+    : `📋 この日の予定はまだありません`;
+  delete el.dataset.action; delete el.dataset.id;
+}
+function renderTimelineHtml(entry) {
+  const isToday = selectedDate === todayKey();
+  const sorted = [...entry.tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  const breakpoints = computeTimelineBreakpoints(sorted);
+  let hourRows = "";
+  for (let h = 0; h < 24; h++) {
+    hourRows += `<div class="timeline-hour-row" style="top:${minuteToY(h * 60, breakpoints)}px">
+      <span class="timeline-hour-label">${pad2(h)}:00</span>
+    </div>`;
+  }
+  let nowLine = "";
+  if (isToday) {
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    nowLine = `<div class="timeline-now-line" id="timelineNowLine" style="top:${minuteToY(nowMin, breakpoints)}px"></div>`;
+  }
+  const tasksHtml = sorted.map(t => {
+    const startMin = toMinutes(t.startTime), endMin = toMinutes(t.endTime);
+    const naturalHeight = (endMin - startMin) * PX_PER_MIN;
+    const top = minuteToY(startMin, breakpoints);
+    // heightは常にminuteToYの差分で求める(自分自身がexpandedTimelineTaskIds
+    // に入っているかどうかで決め打ちしない)。展開中のタスク自身については、
+    // この式が必ずFULL_CONTENT_PXに一致することは設計上保証されている
+    // (taskTopYを基準にk倍する式から導出可能)。一方、展開していない別の
+    // タスクが展開領域の「窓」の中に位置だけ引きずられて動く場合、そのタスク
+    // 自身も窓と同じ比率で拡大されないと、位置(top)だけ動いて高さ(height)は
+    // 元のままという不整合になり、実際にそのバグが起きていた(窓の中の
+    // 別タスクが縮んで見える・隣のタスクとの間に説明のつかない隙間ができる)。
+    const height = minuteToY(endMin, breakpoints) - top;
+    // 「見た目上展開されているか」は、自分自身がexpandedTimelineTaskIdsに
+    // 入っているかではなく、実際にnaturalHeightより高く描画されているかで
+    // 判定する。他の展開タスクの窓に巻き込まれて一緒に拡大されているタスク
+    // (自分自身は未展開)も見た目は区別が付かないため、同じく▲閉じるボタンを
+    // 出す。ボタンを押した時は、実際に展開の起点になっているタスク
+    // (driverTaskId)の展開を解除する(巻き込まれているだけの自分自身を
+    // 解除してもトグルの意味を持たないため)。
+    const isExpanded = height > naturalHeight + 0.01;
+    const region = isExpanded ? breakpoints.find(r => r.ws <= startMin && endMin <= r.we) : null;
+    const driverTaskId = region ? region.driverTaskId : t.id;
+    return timelineTaskBoxHtml(t, isToday, top, height, isExpanded, driverTaskId);
+  }).join("");
+  const totalHeight = 24 * 60 * PX_PER_MIN + timelineTotalExtra(breakpoints);
+  return `
+    <div class="timeline-wrap" id="timelineWrap" data-action="timeline:add-at" style="height:${totalHeight}px">
+      ${hourRows}
+      ${nowLine}
+      ${tasksHtml}
+    </div>`;
+}
+// autoscroll:trueは日付切り替え・タブ切り替え・初期表示の時だけ指定する
+// (「今」または最初のタスク付近へスクロールする)。チェックボックス
+// トグルやタスク作成/編集/タグ変更後の再描画では指定せず、現在の
+// スクロール位置を保つ(その場の操作でビューが飛ぶと使いづらいため)。
+function renderTodayView({ autoscroll = false } = {}) {
+  const container = document.getElementById("todayView");
+  const entry = getSelectedEntry();
+  container.innerHTML = `
+    <div class="today-sticky-header">
+      ${renderDateNavHtml()}
+      <div id="nowBanner"></div>
+    </div>
+    ${renderTimelineHtml(entry)}
+    <button class="timeline-add-fab" data-action="task:add-open" aria-label="タスクを追加">＋</button>
+  `;
+  renderNowBanner();
+  if (autoscroll) scrollTimelineToRelevantPosition(entry);
+}
+function scrollTimelineToRelevantPosition(entry) {
+  const main = document.querySelector("main");
+  if (!main) return;
+  const isToday = selectedDate === todayKey();
+  let target = isToday ? document.getElementById("timelineNowLine") : null;
+  if (!target) {
+    const sorted = [...entry.tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+    if (sorted.length) target = document.querySelector(`.timeline-task[data-id="${sorted[0].id}"]`);
+  }
+  if (target) {
+    const stickyHeader = document.querySelector(".today-sticky-header");
+    const clearance = (stickyHeader ? stickyHeader.getBoundingClientRect().height : 0) + 16;
+    const targetTop = target.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+    main.scrollTop = Math.max(0, targetTop - clearance);
+  } else {
+    main.scrollTop = 0;
+  }
+}
+
+// ---- 6b. タスク作成/編集モーダル(共用) ----
+// editingTaskId===nullなら新規作成モード。dayKeyは呼び出し元が明示的に
+// 渡す(タイムライン発なら選択中の日付、集中タブ発なら実際の今日)。
+// 「予定」タブのselectedDateに決め打ちすると、集中タブ(常に実際の今日を
+// 扱う)発の編集でselectedDateが別日を指している場合に対象を見失うため。
+function openTaskModal(taskId, dayKey) {
+  editingTaskId = taskId;
+  editingTaskDayKey = dayKey;
+  const isEdit = taskId !== null;
+  const task = isEdit ? getEntryForDate(dayKey).tasks.find(t => t.id === taskId) : null;
+  if (isEdit && !task) return;
+  document.getElementById("taskModalTitle").textContent = isEdit ? "タスクを編集" : "タスクを追加";
+  document.getElementById("taskModalSaveBtn").textContent = isEdit ? "保存" : "追加";
+  document.getElementById("taskModalDeleteBtn").style.display = isEdit ? "" : "none";
+  document.getElementById("taskEditOnlyFields").style.display = isEdit ? "" : "none";
+  document.getElementById("editTaskTitle").value = isEdit ? task.title : "";
+  document.getElementById("editTaskStart").value = isEdit ? task.startTime : "";
+  document.getElementById("editTaskEnd").value = isEdit ? task.endTime : "";
+  taskFormTags = new Set(isEdit ? (task.tags || []) : []);
+  renderEditTagPicker();
+  document.getElementById("editTitleHistoryContainer").innerHTML = isEdit ? "" : renderTitleHistoryHtml();
+  if (isEdit) {
+    document.getElementById("editTaskActual").value = task.actualMinutes;
+    document.getElementById("editTaskCompleted").checked = task.completed;
+    // 実行中だけでなく一時停止中(=他タスクへ退避されpausedSessionsに
+    // 待避中)のセッションも対象に含める。以前はactiveSessionだけを見て
+    // いたため、一時停止して別タスクに切り替えた直後は退避先のタスクの
+    // 実績欄が編集可能なままという抜けがあった(削除ガードのhasSessionInProgress
+    // とは異なる基準になっていた)。
+    const timerInProgress = hasSessionInProgress(taskId);
+    document.getElementById("editTaskActual").disabled = timerInProgress;
+    document.getElementById("editTaskActualNote").style.display = timerInProgress ? "" : "none";
+  }
+  document.getElementById("taskEditModal").classList.remove("hidden");
+}
+function openTaskCreateModal(dayKey, prefillStart, prefillEnd) {
+  openTaskModal(null, dayKey);
+  document.getElementById("editTaskStart").value = prefillStart || "";
+  document.getElementById("editTaskEnd").value = prefillEnd || "";
+}
+function renderEditTagPicker() {
+  document.getElementById("editTagPickerContainer").innerHTML =
+    renderTagPickerHtml(taskFormTags, "edit-tag-chip:toggle");
+}
+function closeTaskEditModal() {
+  document.getElementById("taskEditModal").classList.add("hidden");
+  editingTaskId = null;
+  editingTaskDayKey = null;
+}
+function saveTaskEditFromForm() {
+  const title = document.getElementById("editTaskTitle").value.trim();
+  // 開始・終了時刻は必ず15分刻みに揃える(step="900"はSafariのホイール
+  // ピッカーには効くが、手入力やそれ以外のブラウザでは素通りしうるため、
+  // ここで最終的にスナップし直す)。
+  const start = document.getElementById("editTaskStart").value
+    ? formatHHMM(snapMinutesToGrid(toMinutes(document.getElementById("editTaskStart").value)))
+    : "";
+  const end = document.getElementById("editTaskEnd").value
+    ? formatHHMM(snapMinutesToGrid(toMinutes(document.getElementById("editTaskEnd").value)))
+    : "";
+  const isEdit = editingTaskId !== null;
+  const actualInput = document.getElementById("editTaskActual");
+  let actual = 0;
+  if (isEdit) {
+    actual = actualInput.disabled
+      ? getEntryForDate(editingTaskDayKey).tasks.find(t => t.id === editingTaskId).actualMinutes
+      : Number(actualInput.value);
+  }
+  const completed = isEdit ? document.getElementById("editTaskCompleted").checked : false;
+  if (!title || !start || !end) { alert("タスク名・時刻を入力してください"); return; }
+  if (!Number.isFinite(actual) || actual < 0) { alert("実績時間は0以上の数値にしてください"); return; }
+  recordUndoPoint();
+  try {
+    if (isEdit) {
+      updateTask(state, editingTaskDayKey, editingTaskId, {
+        title, startTime: start, endTime: end,
+        tags: [...taskFormTags], actualMinutes: actual, completed,
+      });
+    } else {
+      addTask(state, editingTaskDayKey, { title, startTime: start, endTime: end, tags: [...taskFormTags] });
+    }
+    saveState(state);
+    closeTaskEditModal();
+    if (currentView === "today") renderTodayView();
+    if (currentView === "focus") renderFocusView();
+    renderHeaderStreak();
+  } catch (err) {
+    discardPendingUndoSnapshot();
+    alert(err.message);
+  }
+}
+// 実行中/一時停止中(=activeSession)・退避中(=pausedSessions)のいずれかの
+// 未確定な集中タイマー進捗を持つタスクは、それを黙って失わせないよう
+// 削除を拒否する。
+function hasSessionInProgress(taskId) {
+  return (state.activeSession && state.activeSession.taskId === taskId) || !!state.pausedSessions[taskId];
+}
+function deleteFromTaskModal() {
+  if (editingTaskId === null) return;
+  if (hasSessionInProgress(editingTaskId)) {
+    alert("このタスクには実行中または中断中の集中セッションがあります。先に終了してください。");
+    return;
+  }
+  if (!confirm("このタスクを削除しますか?")) return;
+  recordUndoPoint();
+  removeTask(state, editingTaskDayKey, editingTaskId);
+  saveState(state);
+  closeTaskEditModal();
+  if (currentView === "today") renderTodayView();
+  if (currentView === "focus") renderFocusView();
+  renderHeaderStreak();
+}
+
+function renderFocusView() {
+  const container = document.getElementById("focusView");
+  const entry = getTodayEntry();
+  const session = state.activeSession;
+
+  if (!session) {
+    if (focusSelectedTaskId === null || !entry.tasks.some(t => t.id === focusSelectedTaskId)) {
+      focusSelectedTaskId = suggestTaskId();
+    }
+  }
+
+  // セッション中のタスクは、そのセッションが開始した日(session.dayKey)から
+  // 探す。日を跨いで実行中/一時停止中のまま残った場合、entry(=今日)には
+  // そのタスクが存在しないため、todayEntryだけを見ると常に見失う
+  // (以前はここでタスクが見つからず、タイトル・実績が表示されなくなる
+  // バグがあった)。
+  const sessionTask = session ? getEntryForDate(session.dayKey).tasks.find(t => t.id === session.taskId) : null;
+  const sessionTaskCrossDay = !!(session && !entry.tasks.some(t => t.id === session.taskId));
+
+  const selectedId = session ? session.taskId : focusSelectedTaskId;
+  const selectedTask = session ? sessionTask : (entry.tasks.find(t => t.id === selectedId) || null);
+  // 通常は今日のタスクだけを選択肢にする。セッションのタスクが日を跨いで
+  // 今日のリストに存在しない場合だけ、先頭に追加してselectedとして見える
+  // ようにする(selectのdisabledと合わせて、他タスクへの切替はできないが
+  // 現在の対象が何かは正しく表示する)。
+  const optionSourceTasks = sessionTaskCrossDay && sessionTask ? [sessionTask, ...entry.tasks] : entry.tasks;
+  const options = optionSourceTasks.map(t => {
+    const isPausedHere = !!(session && session.paused && session.taskId === t.id);
+    const pausedMark = (state.pausedSessions[t.id] || isPausedHere) ? "⏸ " : "";
+    const doneMark = t.completed ? "✓ " : "";
+    const crossDayMark = (sessionTaskCrossDay && t.id === session.taskId) ? "(前日から継続) " : "";
+    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${crossDayMark}${escapeHtml(t.title)}</option>`;
+  }).join("");
+
+  let timerHtml;
+  if (session) {
+    const remaining = session.paused ? session.pausedRemainingMs : session.endAt - Date.now();
+    const phase = session.kind === "focus" ? "集中" : "休憩";
+    const task = sessionTask;
+    const blocksDone = task ? Math.round(task.actualMinutes / state.settings.focusMinutes) : 0;
+    const blocksTotal = task ? task.plannedPomodoros : 0;
+    timerHtml = `
+      <div class="timer-phase">${phase}${task ? "・" + escapeHtml(task.title) : ""}</div>
+      <div class="timer-display">${formatMMSS(remaining)}</div>
+      ${task ? `<div class="timer-progress">${blocksDone}/${blocksTotal} ブロック完了</div>` : ""}
+      <div class="timer-controls">
+        ${session.paused
+          ? '<button class="btn primary" data-action="resume">再開</button>'
+          : '<button class="btn" data-action="pause">一時停止</button>'}
+        <button class="btn danger-outline" data-action="finish">終了</button>
+      </div>
+      ${session.paused && !sessionTaskCrossDay ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}
+      ${sessionTaskCrossDay ? '<div class="timer-hint">日をまたいで続いているタスクのため、他のタスクへの切り替えはできません。先に「終了」してください。</div>' : ""}`;
+  } else {
+    timerHtml = `
+      <div class="timer-phase">タスクを選んで開始</div>
+      <div class="timer-display">${pad2(state.settings.focusMinutes)}:00</div>
+      <div class="timer-controls">
+        <button class="btn primary" data-action="start-focus" ${entry.tasks.length === 0 ? "disabled" : ""}>集中スタート</button>
+      </div>`;
+  }
+
+  // 実行中(一時停止していない)のセッションに加え、日を跨いだセッションも
+  // 選択肢を固定する(上記のoptionSourceTasksの特別扱いと対にして、
+  // 「今日のタスクに切り替えたつもりが日を跨いだタスクの残り状態を壊す」
+  // ことを防ぐ)。
+  const selectDisabled = !!(session && (!session.paused || sessionTaskCrossDay));
+  container.innerHTML = `
+    <div class="focus-select-row">
+      <select id="focusTaskSelect" ${selectDisabled ? "disabled" : ""}>
+        ${optionSourceTasks.length ? options : '<option value="">タスクがありません</option>'}
+      </select>
+      <button class="icon-btn" data-action="task:edit-open" data-id="${selectedId || ""}" data-day="${session ? session.dayKey : todayKey()}"
+        aria-label="編集" ${selectedId ? "" : "disabled"}>✏️</button>
+      <button class="icon-btn danger" data-action="focus:delete-selected" data-id="${selectedId || ""}"
+        aria-label="削除" ${selectedId ? "" : "disabled"}>🗑</button>
+    </div>
+    ${renderFocusTaskDetailHtml(selectedTask)}
+    <div class="timer-card">${timerHtml}</div>
+  `;
+}
+function renderFocusTaskDetailHtml(task) {
+  if (!task) return "";
+  const tagsHtml = (task.tags && task.tags.length)
+    ? `<div class="task-tags">${task.tags.map(tag => `<span class="chip static">🏷️${escapeHtml(tagChipLabel(tag))}</span>`).join("")}</div>`
+    : "";
+  return `
+    <div class="focus-task-detail">
+      <div class="focus-task-detail-title ${task.completed ? "done" : ""}">${escapeHtml(task.title)}${task.completed ? "(完了済み)" : ""}</div>
+      <div class="focus-task-detail-meta">
+        ${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}(🍅${task.plannedPomodoros})・実績${formatDuration(task.actualMinutes)}
+      </div>
+      ${tagsHtml}
+    </div>`;
+}
+
+function buildHeatmap(days) {
+  const today = todayKey();
+  let html = "";
+  for (let i = days - 1; i >= 0; i--) {
+    const dayKey = addDays(today, -i);
+    const entry = state.days[dayKey];
+    const rate = entry ? computeCompletionRate(entry) : 0;
+    const level = entry && entry.tasks.length ? Math.min(4, Math.ceil(rate * 4)) : 0;
+    html += `<div class="heat-cell level-${level}" data-day="${dayKey}" data-rate="${Math.round(rate * 100)}"></div>`;
+  }
+  return html;
+}
+function renderStatsView() {
+  const container = document.getElementById("statsView");
+  const entry = getTodayEntry();
+  const rate = computeCompletionRate(entry);
+  const allTime = computeAllTimeTotals(state);
+  const rows = entry.tasks.map(t => `
+    <tr>
+      <td>${escapeHtml(t.title)}</td>
+      <td>${formatDuration(t.plannedMinutes)}</td>
+      <td>${formatDuration(t.actualMinutes)}</td>
+      <td>${t.completed ? "✅" : "—"}</td>
+    </tr>`).join("");
+
+  container.innerHTML = `
+    <div class="streak-row">
+      <div class="streak-box">
+        <div class="streak-value">${state.streak.current}</div>
+        <div class="streak-label">連続達成日数</div>
+      </div>
+      <div class="streak-box">
+        <div class="streak-value">${state.streak.longest}</div>
+        <div class="streak-label">最長記録</div>
+      </div>
+      <div class="streak-box">
+        <div class="streak-value">${Math.round(rate * 100)}%</div>
+        <div class="streak-label">今日の完了率</div>
+      </div>
+    </div>
+    <table class="today-table">
+      <thead><tr><th>タスク</th><th>計画</th><th>実績</th><th>完了</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="empty-hint">今日のタスクはまだありません</td></tr>'}</tbody>
+    </table>
+    <div class="heatmap-section">
+      <div class="heatmap-title">直近28日間</div>
+      <div class="heatmap-grid">${buildHeatmap(28)}</div>
+      <div id="heatmapDetail" class="heatmap-detail"></div>
+    </div>
+    <div class="heatmap-section">
+      <div class="heatmap-title">タグ別集計(保持期間内の全期間・複数タグを持つタスクは両方に計上されます)</div>
+      ${renderTagAggregatesHtml()}
+    </div>
+    <div class="all-time-row">📚 全期間の実績: ${formatDuration(allTime.actualMinutes)}(完了 ${allTime.completedCount}件)</div>
+  `;
+}
+function renderTagFilterChipsHtml() {
+  if (!state.tags.length) return "";
+  return `<div class="chip-row">${state.tags.map(tag =>
+    `<span class="chip${statsTagFilter.has(tag) ? " selected" : ""}" data-action="stats:tag-filter-toggle" data-tag="${escapeHtml(tag)}">🏷️${escapeHtml(tagChipLabel(tag))}</span>`
+  ).join("")}</div>`;
+}
+// 「全期間」は保持期間(既定6か月)より前の月は月次サマリーに圧縮され
+// タグ別の内訳が失われているため、実際には「保持期間内の全期間」が対象
+// (README/CLAUDE.mdに明記)。タグを選択すると、そのタグ自身と配下の
+// 階層タグだけに絞り込む(複数選択時はいずれかに一致すれば表示)。
+function renderTagAggregatesHtml() {
+  const totals = computeTagAggregates(Object.values(state.days));
+  const filterActive = statsTagFilter.size > 0;
+  // 子孫タグを選択した場合、その祖先タグの行も(木の罫線記号の整合性を
+  // 保つため)一緒に表示する。祖先行には自分自身の(配下すべてを含む)
+  // 実際の集計値をそのまま出す(隠さない)。
+  const passesFilter = path => !filterActive || [...statsTagFilter].some(f =>
+    path === f || path.startsWith(f + "/") || f.startsWith(path + "/")
+  );
+  const tree = buildTagTree(Object.keys(totals).filter(p => p !== "(タグ無し)"));
+  let rowsHtml = renderTagTreeRows(tree, "", (node, prefix) => {
+    if (!passesFilter(node.path)) return "";
+    const t = totals[node.path];
+    if (!t) {
+      // 実データの無い暗黙の中間ノード(木構造を保つためだけに存在)
+      return `<div class="tag-agg-row"><span><span class="tag-tree-prefix">${prefix}</span><span class="tag-virtual-label">${escapeHtml(node.name)}</span></span><span></span></div>`;
+    }
+    return `<div class="tag-agg-row">
+      <span><span class="tag-tree-prefix">${prefix}</span>${escapeHtml(node.name)}</span>
+      <span>${formatDuration(t.planned)} 計画 / ${formatDuration(t.actual)} 実績</span>
+    </div>`;
+  });
+  if (totals["(タグ無し)"] && !filterActive) {
+    const t = totals["(タグ無し)"];
+    rowsHtml += `<div class="tag-agg-row"><span>(タグ無し)</span><span>${formatDuration(t.planned)} 計画 / ${formatDuration(t.actual)} 実績</span></div>`;
+  }
+  if (!rowsHtml) rowsHtml = '<div class="empty-hint">該当するタスクがありません</div>';
+  return renderTagFilterChipsHtml() + rowsHtml;
+}
+
+function switchView(view) {
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.dataset.view === view));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === view));
+  currentView = view;
+  renderHeaderStreak();
+  if (view === "today") renderTodayView({ autoscroll: true });
+  if (view === "focus") renderFocusView();
+  if (view === "stats") renderStatsView();
+}
+
+// ---- 6a. カレンダーモーダル ----
+function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
+function firstWeekdayOfMonth(year, month) { return new Date(year, month - 1, 1).getDay(); }
+function openCalendar() {
+  const [y, m] = selectedDate.split("-").map(Number);
+  calendarViewMonth = { year: y, month: m };
+  renderCalendarModal();
+  document.getElementById("calendarModal").classList.remove("hidden");
+}
+function closeCalendar() {
+  document.getElementById("calendarModal").classList.add("hidden");
+}
+function renderCalendarModal() {
+  const { year, month } = calendarViewMonth;
+  const total = daysInMonth(year, month);
+  const offset = firstWeekdayOfMonth(year, month);
+  const today = todayKey();
+  const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+  const monthKey = `${year}-${pad2(month)}`;
+  const archived = state.archive.monthlySummaries[monthKey];
+  let cells = "";
+  for (let i = 0; i < offset; i++) cells += '<div class="calendar-cell empty"></div>';
+  for (let day = 1; day <= total; day++) {
+    const dayKey = `${year}-${pad2(month)}-${pad2(day)}`;
+    const hasTasks = state.days[dayKey] && state.days[dayKey].tasks.length > 0;
+    const classes = ["calendar-cell"];
+    if (dayKey === today) classes.push("is-today");
+    if (dayKey === selectedDate) classes.push("is-selected");
+    if (hasTasks) classes.push("has-tasks");
+    cells += `<div class="${classes.join(" ")}" data-action="cal:pick" data-day="${dayKey}">${day}</div>`;
+  }
+  // 前月/次月ボタンの位置が月をまたいで動かないよう、常に6行×7列=42セル
+  // 固定になるよう末尾にも空セルを足す(先頭オフセット+日数分に対する差分)。
+  for (let i = offset + total; i < 42; i++) cells += '<div class="calendar-cell empty"></div>';
+  const archiveNote = archived
+    ? `<div class="archive-note">この月は集計のみ保持: 計画${formatDuration(archived.plannedMinutes)}・実績${formatDuration(archived.actualMinutes)}・完了${archived.completedCount}/${archived.totalCount}件</div>`
+    : "";
+  document.getElementById("calendarBody").innerHTML = `
+    <div class="calendar-nav">
+      <button class="icon-btn glyph-icon-btn" data-action="cal:prev-month" aria-label="前月">◀</button>
+      <span class="month-label">${year}年${month}月</span>
+      <button class="icon-btn glyph-icon-btn" data-action="cal:next-month" aria-label="次月">▶</button>
+    </div>
+    <div class="calendar-grid">
+      ${weekdays.map(w => `<div class="calendar-weekday">${w}</div>`).join("")}
+      ${cells}
+    </div>
+    ${archiveNote}
+  `;
+}
+
+// ---- 6c. タグ管理モーダル ----
+function openTagsModal() {
+  renderTagsModal();
+  document.getElementById("tagsModal").classList.remove("hidden");
+}
+function closeTagsModal() {
+  document.getElementById("tagsModal").classList.add("hidden");
+  editingTagPath = null;
+}
+function renderTagsModal() {
+  const sorted = [...state.tags].sort();
+  const tree = buildTagTree(sorted);
+  const listHtml = sorted.length
+    ? renderTagTreeRows(tree, "", (node, prefix) => {
+        if (!node.real) {
+          // タグ名に"/"を直接含めて作られた深い階層で、中間の親が実タグとして
+          // 登録されていない場合の暗黙ノード。編集/削除の対象ではないので
+          // ボタンは出さず、薄い表示に留める。
+          return `<div class="tag-row">
+            <span><span class="tag-tree-prefix">${prefix}</span><span class="tag-virtual-label">${escapeHtml(node.name)}</span></span>
+          </div>`;
+        }
+        const stale = isTagSubtreeStale(state, node.path)
+          ? `<span class="tag-stale-badge">${TAG_STALE_AFTER_DAYS}日以上未使用</span>` : "";
+        return `<div class="tag-row">
+          <span><span class="tag-tree-prefix">${prefix}</span>${escapeHtml(node.name)}${stale}</span>
+          <span>
+            <button class="icon-btn" data-action="tags:edit-start" data-tag="${escapeHtml(node.path)}" aria-label="編集">✏️</button>
+            <button class="icon-btn danger" data-action="tags:delete" data-tag="${escapeHtml(node.path)}" aria-label="削除">🗑</button>
+          </span>
+        </div>`;
+      })
+    : '<div class="empty-hint">タグはまだありません</div>';
+  document.getElementById("tagsListBody").innerHTML = listHtml;
+  // 編集中のタグ自身とその配下は親候補から除外する(循環参照を防ぐ)。
+  const excluded = editingTagPath ? sorted.filter(t => t === editingTagPath || t.startsWith(editingTagPath + "/")) : [];
+  const parentOptions = sorted.filter(t => !excluded.includes(t));
+  const select = document.getElementById("tagParentSelect");
+  select.innerHTML = '<option value="">(トップレベル)</option>' +
+    parentOptions.map(path => `<option value="${escapeHtml(path)}">${escapeHtml(path)}</option>`).join("");
+
+  if (editingTagPath) {
+    const segs = editingTagPath.split("/");
+    const name = segs.pop();
+    select.value = segs.join("/");
+    document.getElementById("tagNameInput").value = name;
+    document.getElementById("tagSubmitBtn").textContent = "更新";
+    document.getElementById("tagCancelEditBtn").style.display = "";
+  } else {
+    document.getElementById("tagSubmitBtn").textContent = "タグを作成";
+    document.getElementById("tagCancelEditBtn").style.display = "none";
+  }
+}
+function startTagEdit(path) {
+  editingTagPath = path;
+  renderTagsModal();
+}
+function cancelTagEdit() {
+  editingTagPath = null;
+  document.getElementById("tagNameInput").value = "";
+  renderTagsModal();
+}
+
+// ==== 7. イベントハンドラ ====
+function openSettings() {
+  document.getElementById("settingsFocusMinutes").value = state.settings.focusMinutes;
+  document.getElementById("settingsBreakMinutes").value = state.settings.breakMinutes;
+  document.getElementById("settingsStreakThreshold").value = state.settings.streakThreshold;
+  document.getElementById("settingsModal").classList.remove("hidden");
+}
+function closeSettings() {
+  document.getElementById("settingsModal").classList.add("hidden");
+}
+function saveSettingsFromForm() {
+  const fm = Number(document.getElementById("settingsFocusMinutes").value);
+  const bm = Number(document.getElementById("settingsBreakMinutes").value);
+  const st = Number(document.getElementById("settingsStreakThreshold").value);
+  if (![fm, bm, st].every(Number.isFinite) || fm < 1 || bm < 1 || st < 1) {
+    alert("正しい数値を入力してください");
+    return;
+  }
+  state.settings.focusMinutes = Math.round(fm);
+  state.settings.breakMinutes = Math.round(bm);
+  state.settings.streakThreshold = Math.round(st);
+  saveState(state);
+  closeSettings();
+  renderAll();
+}
+function doExport() {
+  const json = exportStateAsJson(state);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `1day-scheduler-backup-${todayKey()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function handleImportFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = importStateFromJson(reader.result);
+      if (!confirm("現在のデータを置き換えてインポートします。この操作は元に戻せません。よろしいですか?")) return;
+      state = imported;
+      rolloverIfNeeded(state);
+      selectedDate = todayKey(); // データセット全体が入れ替わるため表示日は今日に戻す
+      saveState(state);
+      renderAll();
+      alert("インポートしました。");
+    } catch (e) {
+      alert("インポートに失敗しました。ファイル形式を確認してください。");
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ---- 7a. タイムラインのドラッグ(移動・端リサイズ) ----
+// pointerdown/move/up/cancelはdocumentへ委譲する(.timeline-taskは
+// renderTodayViewのたびにinnerHTMLごと作り直されるため、要素個別に
+// リスナーを付けても再描画のたびに失われる)。ドラッグ中はプレビューとして
+// box.style.top/heightを直接書き換えるだけにとどめ、確定(pointerup)する
+// までstateには一切触れない(取り消し(pointercancel)時に何も後始末が
+// 要らないようにするため)。
+const DRAG_MOVE_THRESHOLD_PX = 6; // これ未満の移動はタップ扱い(誤ドラッグ防止)
+const EDGE_SCROLL_ZONE_PX = 60; // 画面端からこの距離に入ったら自動スクロールを始める
+const EDGE_SCROLL_MAX_SPEED_PX = 14; // 端に最も近づいた時の1フレームあたりの最大スクロール量
+let dragState = null;
+let autoScrollRAF = null;
+// 実際にドラッグした直後、その同じ箱に対して発火する合成clickだけを
+// 無視する(誤タップでの選択遷移/編集モーダル起動/展開トグルを防ぐ)。
+// 単純な真偽値フラグにすると、ドラッグ後たまたま他の場所を一度もクリック
+// しないまま全く無関係な要素(例: このすぐ後でテストしたUndoボタン)を
+// クリックした時にまでそのクリックを飲み込んでしまう実バグがあったため、
+// 「対象の箱が一致し、かつドラッグ終了から短時間以内」という条件に絞る。
+let lastDragBox = null;
+let lastDragEndAt = 0;
+const DRAG_CLICK_SUPPRESS_MS = 500;
+function timelinePointerDown(e) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (e.target.closest("input, button")) return; // チェックボックス/✏️/▲は通常のタップに任せる
+  const box = e.target.closest(".timeline-task");
+  if (!box) return;
+  const taskId = box.dataset.id, dayKey = box.dataset.day;
+  const task = getEntryForDate(dayKey).tasks.find(t => t.id === taskId);
+  if (!task) return;
+  // リサイズの可否・上端/下端の判定は、DOM上に実際に描画されている
+  // .timeline-resize-handle要素の有無で行う(offsetYのpx計算を独自に
+  // 持たない)。これにより「見た目上つかめる領域」と「実際に反応する領域」
+  // が常に一致し、箱が低すぎる場合(MIN_RESIZE_BOX_PX未満)にハンドル自体を
+  // 描画しないrenderTimelineHtml側の判断がそのままドラッグの挙動にも
+  // 反映される。
+  const handle = e.target.closest(".timeline-resize-handle");
+  const mode = handle ? (handle.classList.contains("top") ? "resize-top" : "resize-bottom") : "move";
+  const main = document.querySelector("main");
+  dragState = {
+    pointerId: e.pointerId, box, taskId, dayKey, mode,
+    startClientY: e.clientY, lastClientY: e.clientY,
+    startScrollTop: main ? main.scrollTop : 0,
+    startTopPx: parseFloat(box.style.top),
+    startHeightPx: parseFloat(box.style.height),
+    origStartMin: toMinutes(task.startTime),
+    origEndMin: toMinutes(task.endTime),
+    moved: false,
+    previewStartMin: null, previewEndMin: null,
+  };
+}
+// ポインタの絶対位置(clientY)ではなく、ドラッグ開始からの相対移動量
+// (ポインタの移動 + その間にページがスクロールした量)を分に変換する。
+// 自動スクロール(後述)でmain.scrollTopが変化しても、指が画面上で
+// 実際に動いた量と体感を一致させるために両方を合算する必要がある。
+function computeDragEffectiveDeltaY() {
+  const main = document.querySelector("main");
+  const scrollDelta = (main ? main.scrollTop : 0) - dragState.startScrollTop;
+  return (dragState.lastClientY - dragState.startClientY) + scrollDelta;
+}
+function computeDragPreview() {
+  const deltaMinSnapped = snapMinutesToGrid(computeDragEffectiveDeltaY() / PX_PER_MIN);
+  let newStartMin = dragState.origStartMin, newEndMin = dragState.origEndMin;
+  if (dragState.mode === "move") {
+    newStartMin = dragState.origStartMin + deltaMinSnapped;
+    newEndMin = dragState.origEndMin + deltaMinSnapped;
+    const dur = dragState.origEndMin - dragState.origStartMin;
+    if (newStartMin < 0) { newStartMin = 0; newEndMin = dur; }
+    if (newEndMin > 24 * 60) { newEndMin = 24 * 60; newStartMin = 24 * 60 - dur; }
+  } else if (dragState.mode === "resize-top") {
+    newStartMin = Math.max(0, Math.min(dragState.origEndMin - TIMELINE_SNAP_MIN, dragState.origStartMin + deltaMinSnapped));
+  } else { // resize-bottom
+    newEndMin = Math.min(24 * 60, Math.max(dragState.origStartMin + TIMELINE_SNAP_MIN, dragState.origEndMin + deltaMinSnapped));
+  }
+  dragState.previewStartMin = newStartMin;
+  dragState.previewEndMin = newEndMin;
+  // 高さは移動時(move)は常に元のまま(展開中の架空の高さもそのまま
+  // 保たれる)。リサイズ時は実際の分数から計算するため、展開中の箱を
+  // リサイズし始めた瞬間、架空の高さから実際の(自然な)高さへ見た目が
+  // 一段階だけジャンプする(数値としては常に正しい。時刻の計算は
+  // dragState.origStartMin/origEndMinというタスクの実データだけを基準にした
+  // 相対差分で行っており、箱の見た目上の位置は一切参照しないため)。
+  const previewHeightPx = dragState.mode === "move" ? dragState.startHeightPx : (newEndMin - newStartMin) * PX_PER_MIN;
+  const previewTopPx = dragState.startTopPx + (newStartMin - dragState.origStartMin) * PX_PER_MIN;
+  dragState.box.style.top = previewTopPx + "px";
+  dragState.box.style.height = previewHeightPx + "px";
+  updateDragTimeTooltip(dragState.lastClientY, newStartMin, newEndMin);
+}
+// ドラッグ中にポインタが画面の上端(固定ヘッダー・日付ナビ・バナーの下)
+// または下端(タブバーの上)に近づいたら、指を止めていても継続的に
+// スクロールする(pointermoveは指が動いた時にしか発火しないため、
+// 「端に置いたまま止めている」状態を検知するにはrequestAnimationFrameで
+// 毎フレーム位置を確認するループが必要)。
+function autoScrollTick() {
+  if (!dragState || !dragState.moved) { autoScrollRAF = null; return; }
+  const main = document.querySelector("main");
+  if (main) {
+    const stickyHeader = document.querySelector(".today-sticky-header");
+    const topBound = stickyHeader ? stickyHeader.getBoundingClientRect().bottom : 0;
+    const tabbar = document.querySelector(".tabbar");
+    const bottomBound = window.innerHeight - (tabbar ? tabbar.getBoundingClientRect().height : 0);
+    const y = dragState.lastClientY;
+    let scrollDelta = 0;
+    if (y < topBound + EDGE_SCROLL_ZONE_PX) {
+      const intensity = Math.min(1, (topBound + EDGE_SCROLL_ZONE_PX - y) / EDGE_SCROLL_ZONE_PX);
+      scrollDelta = -EDGE_SCROLL_MAX_SPEED_PX * intensity;
+    } else if (y > bottomBound - EDGE_SCROLL_ZONE_PX) {
+      const intensity = Math.min(1, (y - (bottomBound - EDGE_SCROLL_ZONE_PX)) / EDGE_SCROLL_ZONE_PX);
+      scrollDelta = EDGE_SCROLL_MAX_SPEED_PX * intensity;
+    }
+    if (scrollDelta !== 0) {
+      const before = main.scrollTop;
+      main.scrollTop = Math.max(0, Math.min(main.scrollHeight - main.clientHeight, main.scrollTop + scrollDelta));
+      if (main.scrollTop !== before) computeDragPreview();
+    }
+  }
+  autoScrollRAF = requestAnimationFrame(autoScrollTick);
+}
+function timelinePointerMove(e) {
+  if (!dragState || e.pointerId !== dragState.pointerId) return;
+  dragState.lastClientY = e.clientY;
+  if (!dragState.moved) {
+    if (Math.abs(computeDragEffectiveDeltaY()) < DRAG_MOVE_THRESHOLD_PX) return;
+    dragState.moved = true;
+    dragState.box.classList.add("dragging");
+    document.body.style.cursor = dragState.mode === "move" ? "grabbing" : "ns-resize";
+    // ポインタが既に離されている等の稀な競合でNotFoundErrorが飛ぶことが
+    // あるが、キャプチャが取れなくてもプレビュー自体は以降のpointermoveで
+    // 問題なく更新できるため、ここで処理全体が止まらないよう握りつぶす。
+    try { dragState.box.setPointerCapture(dragState.pointerId); } catch (err) { /* no-op */ }
+    showDragTimeTooltip();
+    autoScrollRAF = requestAnimationFrame(autoScrollTick);
+  }
+  e.preventDefault();
+  computeDragPreview();
+}
+function timelinePointerUp(e) {
+  if (!dragState || e.pointerId !== dragState.pointerId) return;
+  const ds = dragState;
+  dragState = null;
+  if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+  document.body.style.cursor = "";
+  ds.box.classList.remove("dragging");
+  if (ds.box.releasePointerCapture && ds.box.hasPointerCapture && ds.box.hasPointerCapture(e.pointerId)) {
+    ds.box.releasePointerCapture(e.pointerId);
+  }
+  hideDragTimeTooltip();
+  if (!ds.moved) return; // ただのタップ。通常のclickイベントに処理を譲る。
+  lastDragBox = ds.box; lastDragEndAt = Date.now();
+  const newStartMin = ds.previewStartMin, newEndMin = ds.previewEndMin;
+  if (newStartMin === ds.origStartMin && newEndMin === ds.origEndMin) {
+    renderTodayView(); // 変化なし。プレビューで直接書き換えたstyleを実描画に戻すだけ。
+    return;
+  }
+  recordUndoPoint();
+  // 区間が完全に元の範囲の内側に収まる(縮小のみ)場合は新たな重なりを
+  // 生まないため、衝突解決自体をスキップしてよい。
+  const isShrinkOnly = newStartMin >= ds.origStartMin && newEndMin <= ds.origEndMin;
+  let ok;
+  if (isShrinkOnly) {
+    setTaskTimeRange(state, ds.dayKey, ds.taskId, newStartMin, newEndMin);
+    ok = true;
+  } else {
+    const direction = ds.mode === "resize-bottom"
+      ? (newEndMin > ds.origEndMin ? "later" : "earlier")
+      : (newStartMin < ds.origStartMin ? "earlier" : "later");
+    ok = applyDragResult(state, ds.dayKey, ds.taskId, newStartMin, newEndMin, direction).ok;
+  }
+  if (!ok) {
+    discardPendingUndoSnapshot();
+    alert("これ以上は動かせません(1日の範囲に収まりません)。");
+    renderTodayView();
+    return;
+  }
+  saveState(state);
+  renderTodayView();
+  renderHeaderStreak();
+}
+function timelinePointerCancel(e) {
+  if (!dragState || e.pointerId !== dragState.pointerId) return;
+  if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+  document.body.style.cursor = "";
+  dragState.box.classList.remove("dragging");
+  dragState = null;
+  hideDragTimeTooltip();
+  renderTodayView(); // プレビューで直接書き換えたstyleを実データに基づく描画で必ず戻す
+}
+function showDragTimeTooltip() {
+  let el = document.getElementById("dragTimeTooltip");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "dragTimeTooltip";
+    el.className = "drag-time-tooltip";
+    document.body.appendChild(el);
+  }
+  el.style.display = "block";
+}
+function updateDragTimeTooltip(clientY, startMin, endMin) {
+  const el = document.getElementById("dragTimeTooltip");
+  if (!el) return;
+  el.textContent = `${formatHHMM(startMin)}〜${formatHHMM(endMin)}`;
+  el.style.top = Math.max(8, clientY - 40) + "px";
+}
+function hideDragTimeTooltip() {
+  const el = document.getElementById("dragTimeTooltip");
+  if (el) el.style.display = "none";
+}
+document.addEventListener("pointerdown", timelinePointerDown);
+document.addEventListener("pointermove", timelinePointerMove, { passive: false });
+document.addEventListener("pointerup", timelinePointerUp);
+document.addEventListener("pointercancel", timelinePointerCancel);
+
+// Ctrl+Z(元に戻す)/Ctrl+Y(やり直す、Windowsの標準的なRedoショートカット)。
+// フォーム入力中(テキスト欄選択中など)はOS/ブラウザ標準の編集用Undoに
+// 譲るため、またモーダル編集中に裏のタスク一覧が変わると混乱するため、
+// どちらも素通りさせる(何もしない)。
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (key !== "z" && key !== "y") return;
+  const active = document.activeElement;
+  const isEditable = active && (
+    active.tagName === "INPUT" || active.tagName === "TEXTAREA" ||
+    active.tagName === "SELECT" || active.isContentEditable
+  );
+  if (isEditable) return;
+  if (document.querySelector(".modal:not(.hidden)")) return;
+  e.preventDefault();
+  if (key === "z") performTaskUndo(); else performTaskRedo();
+});
+
+document.addEventListener("click", (e) => {
+  const draggedBox = e.target.closest(".timeline-task");
+  if (draggedBox && draggedBox === lastDragBox && Date.now() - lastDragEndAt < DRAG_CLICK_SUPPRESS_MS) {
+    lastDragBox = null;
+    return;
+  }
+  const cell = e.target.closest(".heat-cell");
+  if (cell) {
+    const detail = document.getElementById("heatmapDetail");
+    if (detail) detail.textContent = `${cell.dataset.day}: 完了率 ${cell.dataset.rate}%`;
+    return;
+  }
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  switch (action) {
+    case "tab": switchView(btn.dataset.tab); break;
+    case "task:edit-open": openTaskModal(id, btn.dataset.day); break;
+    case "task:edit-close": closeTaskEditModal(); break;
+    case "task:edit-save": saveTaskEditFromForm(); break;
+    case "task:modal-delete": deleteFromTaskModal(); break;
+    case "task:select-focus":
+      focusSelectedTaskId = id;
+      switchView("focus");
+      break;
+    case "task:add-open": {
+      let startMin = Math.ceil((new Date().getHours() * 60 + new Date().getMinutes()) / TIMELINE_SNAP_MIN) * TIMELINE_SNAP_MIN;
+      startMin = Math.min(startMin, 24 * 60 - TIMELINE_SNAP_MIN);
+      const endMin = Math.min(24 * 60, startMin + DEFAULT_NEW_TASK_MINUTES);
+      openTaskCreateModal(selectedDate, formatHHMM(startMin), formatHHMM(endMin));
+      break;
+    }
+    case "timeline:add-at": {
+      const rect = btn.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const breakpoints = computeTimelineBreakpoints(
+        [...getSelectedEntry().tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime))
+      );
+      let startMin = Math.round(yToMinute(y, breakpoints) / TIMELINE_SNAP_MIN) * TIMELINE_SNAP_MIN;
+      startMin = Math.max(0, Math.min(startMin, 24 * 60 - TIMELINE_SNAP_MIN));
+      const endMin = Math.min(24 * 60, startMin + DEFAULT_NEW_TASK_MINUTES);
+      openTaskCreateModal(selectedDate, formatHHMM(startMin), formatHHMM(endMin));
+      break;
+    }
+    case "timeline:toggle-expand": {
+      if (expandedTimelineTaskIds.has(id)) expandedTimelineTaskIds.delete(id);
+      else expandedTimelineTaskIds.add(id);
+      renderTodayView(); // スクロール位置を保ったまま、その場で開閉するだけ
+      break;
+    }
+    case "timeline:toggle-expand-all": {
+      const entry = getSelectedEntry();
+      const compactIds = entry.tasks
+        .filter(t => (toMinutes(t.endTime) - toMinutes(t.startTime)) * PX_PER_MIN < FULL_CONTENT_PX)
+        .map(t => t.id);
+      const allExpanded = compactIds.length > 0 && compactIds.every(cid => expandedTimelineTaskIds.has(cid));
+      if (allExpanded) compactIds.forEach(cid => expandedTimelineTaskIds.delete(cid));
+      else compactIds.forEach(cid => expandedTimelineTaskIds.add(cid));
+      renderTodayView();
+      break;
+    }
+    case "edit-tag-chip:toggle": {
+      const tag = btn.dataset.tag;
+      if (taskFormTags.has(tag)) taskFormTags.delete(tag); else taskFormTags.add(tag);
+      btn.classList.toggle("selected");
+      break;
+    }
+    case "date:prev": selectedDate = addDays(selectedDate, -1); renderTodayView({ autoscroll: true }); break;
+    case "date:next": selectedDate = addDays(selectedDate, 1); renderTodayView({ autoscroll: true }); break;
+    case "date:today": selectedDate = todayKey(); renderTodayView({ autoscroll: true }); break;
+    case "cal:open": openCalendar(); break;
+    case "cal:close": closeCalendar(); break;
+    case "cal:prev-month":
+      calendarViewMonth.month -= 1;
+      if (calendarViewMonth.month < 1) { calendarViewMonth.month = 12; calendarViewMonth.year -= 1; }
+      renderCalendarModal();
+      break;
+    case "cal:next-month":
+      calendarViewMonth.month += 1;
+      if (calendarViewMonth.month > 12) { calendarViewMonth.month = 1; calendarViewMonth.year += 1; }
+      renderCalendarModal();
+      break;
+    case "cal:pick":
+      selectedDate = btn.dataset.day;
+      closeCalendar();
+      renderTodayView({ autoscroll: true });
+      break;
+    case "tags:open": openTagsModal(); break;
+    case "tags:close": closeTagsModal(); break;
+    case "tags:add": {
+      const parent = document.getElementById("tagParentSelect").value;
+      const name = document.getElementById("tagNameInput").value;
+      try {
+        if (editingTagPath) {
+          const newPath = buildTagPath(parent, name);
+          renameTagCascade(state, editingTagPath, newPath);
+          editingTagPath = null;
+        } else {
+          addTagDefinition(state, parent, name);
+        }
+        saveState(state);
+        document.getElementById("tagNameInput").value = "";
+        renderTagsModal();
+        // タスク作成/編集モーダルはタグ管理モーダルと排他的にしか開けない
+        // ため、その場のフォーム入力を気にせず現在表示中のタブだけ
+        // 再描画すればよい(非表示のタブは次の切り替えで作り直される)。
+        if (currentView === "today") renderTodayView();
+        if (currentView === "stats") renderStatsView();
+      } catch (err) {
+        alert(err.message);
+      }
+      break;
+    }
+    case "stats:tag-filter-toggle": {
+      const tag = btn.dataset.tag;
+      if (statsTagFilter.has(tag)) statsTagFilter.delete(tag); else statsTagFilter.add(tag);
+      renderStatsView();
+      break;
+    }
+    case "tags:edit-start": startTagEdit(btn.dataset.tag); break;
+    case "tags:cancel-edit": cancelTagEdit(); break;
+    case "tags:delete": {
+      const path = btn.dataset.tag;
+      const targets = state.tags.filter(t => t === path || t.startsWith(path + "/"));
+      const taskCount = countTasksUsingTags(state, targets);
+      const msg = targets.length > 1
+        ? `「${tagChipLabel(path)}」とその下位タグ${targets.length - 1}件(使用中のタスク${taskCount}件)を削除しますか?`
+        : `「${tagChipLabel(path)}」を削除しますか?(使用中のタスク${taskCount}件)`;
+      if (confirm(msg)) {
+        removeTagCascade(state, path);
+        if (editingTagPath && (editingTagPath === path || editingTagPath.startsWith(path + "/"))) {
+          editingTagPath = null; // 編集中のタグ自身が削除された場合は編集モードを抜ける
+        }
+        saveState(state);
+        renderTagsModal();
+        if (currentView === "today") renderTodayView();
+        if (currentView === "stats") renderStatsView();
+      }
+      break;
+    }
+    case "title-history:pick": {
+      const titleInput = document.getElementById("editTaskTitle");
+      if (titleInput) titleInput.value = btn.dataset.title;
+      break;
+    }
+    case "start-focus": {
+      const select = document.getElementById("focusTaskSelect");
+      const taskId = select ? select.value : focusSelectedTaskId;
+      if (!taskId) return;
+      focusSelectedTaskId = taskId;
+      startSession(taskId, "focus");
+      break;
+    }
+    case "pause": pauseSession(); break;
+    case "resume": resumeSession(); break;
+    case "focus:delete-selected": {
+      if (!id) return;
+      if (hasSessionInProgress(id)) {
+        alert("このタスクには実行中または中断中の集中セッションがあります。先に終了してください。");
+        return;
+      }
+      if (confirm("このタスクを削除しますか?")) {
+        recordUndoPoint();
+        removeTask(state, todayKey(), id);
+        focusSelectedTaskId = null;
+        saveState(state);
+        renderFocusView();
+        renderHeaderStreak();
+      }
+      break;
+    }
+    case "finish": {
+      const elapsed = getSessionElapsedFocusMinutes(state.activeSession);
+      const msg = elapsed > 0
+        ? `ここまでの実績(${elapsed}分)を記録して終了しますか?`
+        : "終了しますか?";
+      if (confirm(msg)) finishSession(elapsed);
+      break;
+    }
+    case "task:undo": performTaskUndo(); break;
+    case "task:redo": performTaskRedo(); break;
+    case "export": doExport(); break;
+    case "settings-open": openSettings(); break;
+    case "settings-close": closeSettings(); break;
+    case "settings-save": saveSettingsFromForm(); break;
+  }
+});
+document.addEventListener("change", (e) => {
+  const el = e.target;
+  if (el.matches('input[type="checkbox"][data-action="toggle"]')) {
+    recordUndoPoint();
+    toggleTaskComplete(state, selectedDate, el.dataset.id);
+    saveState(state); renderAll();
+  } else if (el.id === "focusTaskSelect") {
+    const newId = el.value;
+    // 一時停止中のセッションがあれば退避し、選んだタスクに中断状態が
+    // あれば復元する(select自体はactiveSessionが実行中の間は無効化されて
+    // いるため、実行中からここに来ることは無い)。
+    if (state.activeSession && state.activeSession.paused) {
+      state.pausedSessions[state.activeSession.taskId] = {
+        kind: state.activeSession.kind,
+        pausedRemainingMs: state.activeSession.pausedRemainingMs,
+        dayKey: state.activeSession.dayKey,
+      };
+      state.activeSession = null;
+    }
+    if (!state.activeSession && state.pausedSessions[newId]) {
+      const parked = state.pausedSessions[newId];
+      state.activeSession = { taskId: newId, dayKey: parked.dayKey, kind: parked.kind, paused: true, pausedRemainingMs: parked.pausedRemainingMs, endAt: null };
+      delete state.pausedSessions[newId];
+    }
+    focusSelectedTaskId = newId;
+    saveState(state);
+    renderFocusView();
+  } else if (el.id === "importFile") {
+    handleImportFile(el.files[0]);
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    const rollover = rolloverIfNeeded(state);
+    if (rollover.rolled && selectedDate === rollover.prevDay) selectedDate = rollover.today;
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    if (state.activeSession) ensureTickTimer();
+    tick();
+    renderAll();
+  }
+});
+
+// ==== 8. 初期化 ====
+let state = loadState();
+{
+  const rollover = rolloverIfNeeded(state);
+  if (rollover.rolled && selectedDate === rollover.prevDay) selectedDate = rollover.today;
+}
+document.addEventListener("DOMContentLoaded", () => {
+  renderHeaderStreak();
+  renderTodayView({ autoscroll: true }); // 起動時は必ず「今日」表示なので初回だけ自動スクロールする
+  if (state.activeSession) ensureTickTimer();
+  setInterval(() => { if (currentView === "today") renderNowBanner(); }, 30000);
+});
+</script>
+</body>
+</html>
