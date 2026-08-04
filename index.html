@@ -26,11 +26,22 @@
     --danger: #dc2626;
     --tab-inactive: #6b7280;
     --radius: 14px;
+    /* 予定タブのタイムライン列(.timeline-wrap)の幅の上限。iPad横向きで
+       タイムラインが間延びしないよう中央寄せする際に使う(下記
+       .timeline-wrap・.timeline-add-fab参照。両者で同じ値を書き分けると
+       片方だけ変更漏れが起きるため変数化している)。 */
+    --timeline-col-max-width: 640px;
     --heat-0: #e5e7eb;
     --heat-1: #bfdbfe;
     --heat-2: #93c5fd;
     --heat-3: #60a5fa;
     --heat-4: #2563eb;
+    /* 選択中のタイムラインの箱に表示するリサイズハンドルの背景。従来
+       (aria-hidden要素に背景を指定しない)は完全に透明で、タッチでは
+       どこが掴めるか事前に見えず「サイズ変更のつもりが移動になる」原因の
+       一つになっていた。選択して初めて見える領域なので、はっきり色を
+       付けて存在をアピールする。 */
+    --resize-handle-bg: rgba(37, 99, 235, 0.16);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -49,6 +60,7 @@
       --heat-2: #2f5d8a;
       --heat-3: #3f7cc2;
       --heat-4: #4f8bff;
+      --resize-handle-bg: rgba(79, 139, 255, 0.24);
     }
   }
   *, *::before, *::after { box-sizing: border-box; }
@@ -110,6 +122,20 @@
 
   .view { display: none; }
   .view.active { display: block; }
+  /* iPadを横向きにするとmainの幅がタイムラインの箱にとってかなり広くなり、
+     タスクがぎっしり並ぶとタスクの無い隙間を探してスクロールするのが
+     難しくなる(どこを触ってもタスクの箱に触れてしまい、.timeline-taskの
+     touch-action:noneでページスクロールと競合するドラッグ操作の方が
+     反応してしまう)という指摘を受けた。タイムライン列(.timeline-wrap、
+     下記)だけ幅に上限を設けて中央寄せにし、左右に常にタスクの箱が存在
+     しない(=スクロール専用の)余白を作る。当初は#todayView全体(日付ナビ・
+     バナーの.today-sticky-headerも含む)を中央寄せしていたが、「固定
+     されているヘッダ部は元の通り広げた方が良い」という指摘を受け、
+     .timeline-wrapだけに絞った(.today-sticky-header自体は`main`の
+     padding分を打ち消す既存の負のマージンにより、以前通り画面幅いっぱいに
+     広がる)。.timeline-add-fab(下記参照)は変わらずこの列幅を前提にした
+     位置合わせをする(タイムライン列の右端に追従させたいのは変わらない
+     ため)。 */
 
   .time-row { display: flex; align-items: center; gap: 8px; }
   .time-row input { flex: 1; min-width: 0; }
@@ -131,7 +157,10 @@
      足しても中身がずれるだけで子要素の原点はずれない)。そのため
      padding-topでは効かず、要素自体を通常フローで押し下げるmargin-topを
      使う必要がある(実際に試してpadding-topでは見切れが直らなかった)。 */
-  .timeline-wrap { position: relative; margin: 12px 0 24px; }
+  /* max-width+左右autoで中央寄せにする(--timeline-col-max-width、:root
+     参照)。.today-sticky-header(日付ナビ・バナー)は画面幅いっぱいのまま
+     なので、このタイムライン部分だけが中央の列として収まる形になる。 */
+  .timeline-wrap { position: relative; margin: 12px auto 24px; max-width: var(--timeline-col-max-width); }
   .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
   .timeline-hour-label {
     position: absolute; left: 0; top: -8px; font-size: 11px; color: var(--text-muted);
@@ -146,18 +175,41 @@
   }
   .timeline-task.done { opacity: 0.55; }
   .timeline-task.dragging { z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,0.35); opacity: 0.95; cursor: grabbing; }
-  /* チェックボックス(左上)・✏️(右上、showFullの時)と重ならないよう
-     左右をインセットする。よくあるサイズ変更カーソル(ns-resize)を
-     常時表示し、掴める場所であることが見た目でも分かるようにする。 */
-  /* heightはCSSで固定せず、DRAG_EDGE_ZONE_PXを使ってrenderTimelineHtml側で
-     インラインstyleとして指定する(JSの定数とCSSが別々の値を持つと
-     ここだけ変更漏れが起きる。実際に定数を変えても見た目の判定領域が
-     変わらないというバグがあった)。 */
+  /* 長押しで選択された箱(下記timelinePointerDown参照)。大きなリサイズ
+     ハンドルが同時に表示される合図として、箱全体にもアクセントの縁取りを
+     付ける。box-shadowではなくoutlineを使うのは、.expanded(下記)も同じ
+     box-shadowプロパティを使っており、短い箱を展開しつつ選択もしている
+     場合に後勝ちで片方の見た目が消えてしまうため(実際に確認したCSSの
+     カスケード上の衝突)。outlineは独立したプロパティなので、選択+展開が
+     同時に起きても両方の見た目が常に共存する。 */
+  .timeline-task.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* チェックボックス(左上)・⏱/✏️(右上、showFullの時。2つのボタン分の
+     幅を空けている)と重ならないよう左右をインセットする。よくある
+     サイズ変更カーソル(ns-resize)を常時表示し、掴める場所であることが
+     見た目でも分かるようにする。 */
+  /* heightはCSSで固定せず、DRAG_EDGE_ZONE_PX/PASSIVE_DRAG_EDGE_ZONE_PXを
+     使ってrenderTimelineHtml側でインラインstyleとして指定する(JSの定数と
+     CSSが別々の値を持つとここだけ変更漏れが起きる。実際に定数を変えても
+     見た目の判定領域が変わらないというバグがあった)。ハンドル要素自体は
+     常に描画する(選択していない箱でも控えめなゾーンで直接ドラッグ
+     リサイズできるハイブリッド方式のため)が、見た目を主張するのは
+     armed(長押しで選択済み)の時だけにする。 */
   .timeline-resize-handle {
-    position: absolute; left: 26px; right: 34px; cursor: ns-resize; z-index: 3;
+    position: absolute; left: 26px; right: 62px; cursor: ns-resize; z-index: 3;
+    display: flex; align-items: center; justify-content: center;
   }
-  .timeline-resize-handle.top { top: 0; }
-  .timeline-resize-handle.bottom { bottom: 0; }
+  /* armed中だけ背景色とつまみバーを表示する。選択していない常時ゾーンは
+     見た目上ほぼ主張せず(cursor:ns-resizeだけがヒント)、armedになって
+     初めて「掴める場所」であることを視覚的にアピールする
+     (--resize-handle-bg参照)。 */
+  .timeline-resize-handle.armed {
+    background: var(--resize-handle-bg);
+  }
+  .timeline-resize-handle.armed::after {
+    content: ""; width: 28px; height: 3px; border-radius: 999px; background: var(--accent);
+  }
+  .timeline-resize-handle.top { top: 0; border-radius: 7px 7px 0 0; }
+  .timeline-resize-handle.bottom { bottom: 0; border-radius: 0 0 7px 7px; }
   .drag-time-tooltip {
     position: fixed; left: 50%; transform: translateX(-50%); z-index: 30;
     background: var(--text); color: var(--bg); font-size: 13px; font-weight: 600;
@@ -170,20 +222,26 @@
   .timeline-task-title.compact { font-size: 12px; }
   .timeline-task-title.done { text-decoration: line-through; color: var(--text-muted); }
   .timeline-task-meta { font-size: 11px; color: var(--text-muted); }
-  .timeline-edit-btn { position: absolute; top: 0; right: 0; font-size: 14px; min-width: 28px; min-height: 28px; padding: 4px; }
+  /* ⏱(集中タブへ)・✏️(編集)を横並びで右上に置く。以前は✏️単体を
+     position:absoluteで直接right:0していたが、ボタンが2つになったため
+     まとめて配置する共通の親を挟む方式に変えた(▲閉じるボタンは廃止した
+     ため、下端リサイズハンドルとの位置調整も不要になった)。 */
+  .timeline-task-actions { position: absolute; top: 0; right: 0; display: flex; gap: 2px; }
+  .timeline-task-action-btn { font-size: 14px; min-width: 28px; min-height: 28px; padding: 4px; }
   .timeline-task.expanded { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
-  /* 位置は動かさない方針(閉じるボタン優先)。展開中に同時表示される
-     下端リサイズハンドルの方をこのボタンの右側だけ避けるようにしている
-     (timelineTaskBoxHtmlのresizeHandles参照)。 */
-  .timeline-collapse-btn {
-    position: absolute; bottom: 3px; right: 3px; font-size: 11px; height: 22px; padding: 0 8px;
-    background: var(--border); border: none; border-radius: 999px; color: var(--text); min-height: 0;
-  }
   .timeline-expand-hint {
     position: absolute; bottom: 1px; right: 4px; font-size: 12px; color: var(--text-muted); line-height: 1;
   }
+  /* rightはビューポート右端からの距離ではなく、.timeline-wrapの右端
+     (--timeline-col-max-width、:root参照)からの距離を狙う。iPadを横向きに
+     するとタイムライン列の右側に大きな余白ができるため、素朴にright:20pxの
+     ままだとFABだけタイムライン列から離れた画面端に取り残されて見える。
+     100vwが列の右端を超えている(=中央寄せの余白が生まれている)分だけ
+     right側のオフセットを足し、余白が無い(列が画面幅いっぱいの)時は
+     20pxのままになるようmax()でフォールバックする。 */
   .timeline-add-fab {
-    position: fixed; right: 20px; bottom: calc(76px + env(safe-area-inset-bottom));
+    position: fixed; right: max(20px, calc((100vw - var(--timeline-col-max-width)) / 2 + 20px));
+    bottom: calc(76px + env(safe-area-inset-bottom));
     width: 52px; height: 52px; border-radius: 50%; border: none; background: var(--accent);
     color: var(--accent-contrast); font-size: 26px; line-height: 1; cursor: pointer; z-index: 10;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -492,15 +550,31 @@ const TIMELINE_SNAP_MIN = 15; // 空白タップでの新規作成の時刻ス�
 const DEFAULT_NEW_TASK_MINUTES = 60; // 新規タスク作成時の既定所要時間
 // 上端/下端リサイズのつかみ判定領域(タイムラインの箱・ドラッグ処理の両方から
 // 参照)。移動用の領域を広く取りたいという指摘を受け、12px→9px→6pxの順に
-// 狭めてきた(9pxでもまだ「30分タスクの高さの1/3くらいに見える」との
-// 指摘があったため)。
-const DRAG_EDGE_ZONE_PX = 6;
-// 上端+下端のつかみ判定領域(DRAG_EDGE_ZONE_PX×2)に加えて、移動用に最低
-// 限の余白(12px)を残せる高さが無いと、短い箱では上下のリサイズ判定が
-// 重なり合い移動の判定領域が消えてしまう(実際に指摘を受けたバグ)。
-// この高さ未満の箱ではリサイズ用のつかみ領域自体を描画しない(箱全体が
-// 移動用になる)。
+// 狭めてきたが、iPad実機での試用で「サイズ変更のつもりが移動になってしまう
+// ことが多い」という指摘を受けた。常時同じ小さいゾーンで反応させる方式の
+// まま拡大すると今度は移動用の領域を圧迫するため、「長押しで選択(armed)
+// してから大きなハンドルでリサイズする」を主経路にし、選択していない
+// (armedでない)箱にも控えめな常時ゾーンを残すハイブリッド方式にした
+// (マウス/トラックパッドでの直接ドラッグや、慣れたユーザーの近道として
+// 機能する)。DRAG_EDGE_ZONE_PXはarmed状態用の値(12px、上記の狭めてきた
+// 経緯の最初の値に戻した)。
+const DRAG_EDGE_ZONE_PX = 12;
+// armed(選択+長押し)でない箱の常時ゾーン。以前の6pxと同じ値・同じ
+// トレードオフ(誤って移動になりやすい)を持つが、armed状態というより
+// 確実な代替手段が常にあるため許容する。
+const PASSIVE_DRAG_EDGE_ZONE_PX = 6;
+// 上端+下端のつかみ判定領域(ゾーン幅×2)に加えて、移動用に最低限の余白
+// (12px)を残せる高さが無いと、短い箱では上下のリサイズ判定が重なり合い
+// 移動の判定領域が消えてしまう(実際に指摘を受けたバグ)。この高さ未満の
+// 箱ではその状態(armed/passive)のリサイズ用つかみ領域自体を描画しない
+// (箱全体が移動用のまま。時間の長さを変えたい場合は編集画面から入力する)。
 const MIN_RESIZE_BOX_PX = DRAG_EDGE_ZONE_PX * 2 + 12;
+const MIN_RESIZE_BOX_PX_PASSIVE = PASSIVE_DRAG_EDGE_ZONE_PX * 2 + 12;
+// 長押しでタイムラインの箱を「選択+armed(大きなハンドル表示)」状態に
+// するまでの時間。これ未満で指を離す、または閾値以上動かした場合は通常の
+// タップ/移動ドラッグ/常時ゾーンでの直接リサイズとして扱われる
+// (下記timelinePointerDown/Move参照)。
+const LONG_PRESS_MS = 500;
 
 // ==== 2. 日付・ID・小さな純粋ユーティリティ ====
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -510,9 +584,13 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 function todayKey(d = new Date()) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-function addDays(dayKey, n) {
+// "yyyy-mm-dd"のdayKeyをローカルタイムのDateに変換する(todayKey()の逆変換)。
+function dayKeyToDate(dayKey) {
   const [y, m, d] = dayKey.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
+  return new Date(y, m - 1, d);
+}
+function addDays(dayKey, n) {
+  const dt = dayKeyToDate(dayKey);
   dt.setDate(dt.getDate() + n);
   return todayKey(dt);
 }
@@ -1063,13 +1141,16 @@ function tick() {
 }
 function startSession(taskId, kind) {
   const minutes = kind === "focus" ? state.settings.focusMinutes : state.settings.breakMinutes;
-  // dayKeyはセッション開始時点の実際の今日を記録する(タスク自体は必ず
-  // todayKeyEntryから選ばれるため常に正しい)。日を跨いで実行中/一時停止中の
+  // dayKeyはセッション開始時点でタスクが属している日(=集中タブが予定タブと
+  // 共用しているselectedDate)を記録する。壁時計は常に「今」進むが、
+  // 実績を積む対象はタスク自身が属する日であるべきなので、todayKey()固定
+  // ではなくselectedDateを使う(他日のタスクを選んで実行した場合、実績は
+  // その日のタスクエントリに積算される)。日を跨いで実行中/一時停止中の
   // まま残った場合、addActualMinutesの対象日をtodayKey()の再評価(=日付が
   // 変わった後の新しい日)に任せると、タスクが属する古い日には見つからず
   // 実績が消える(過去に実際に起きたバグ)。セッションに紐付いたこの
   // dayKeyを最後まで使うことで、日を跨いでも元のタスクに正しく積算される。
-  state.activeSession = { taskId, dayKey: todayKey(), kind, endAt: Date.now() + minutes * 60000, paused: false, pausedRemainingMs: null };
+  state.activeSession = { taskId, dayKey: selectedDate, kind, endAt: Date.now() + minutes * 60000, paused: false, pausedRemainingMs: null };
   AudioCue.unlock(); // ユーザー操作(このタップ)の中で生成・resumeする必要がある
   saveState(state);
   renderAll();
@@ -1130,10 +1211,13 @@ function completeSession() {
 // ==== 6. レンダリング ====
 let currentView = "today";
 let focusSelectedTaskId = null;
-// 「予定」タブでカレンダーから選んだ表示対象の日付。ページ読み込みのたびに
-// 必ず実際の今日にリセットされ、localStorageには保存しない。
-// 集中/実績タブ・タイマー・streak判定は常に実際の今日(todayKey())を使い、
-// この変数の影響を受けない。
+// 「予定」タブ・「集中」タブが共用する表示対象の日付。ページ読み込みの
+// たびに必ず実際の今日にリセットされ、localStorageには保存しない。
+// 「集中」タブもこの日付のタスクを選んで実行できる(activeSession.dayKey
+// はこの値から設定される)が、streak判定・「今: ◯◯」バナー・現在時刻線は
+// 常に実際の今日(todayKey())を使い、この変数の影響を受けない
+// (「今この瞬間」を表す概念のため。詳細はrenderFocusView/startSessionの
+// コメント参照)。
 let selectedDate = todayKey();
 let calendarViewMonth = null; // {year, month} カレンダーモーダルを開いた時に設定
 // タスクの新規作成・編集を共用する#taskEditModalの状態。editingTaskIdが
@@ -1146,22 +1230,48 @@ let taskFormTags = new Set();
 let editingTagPath = null; // タグ管理モーダルでリネーム編集中のタグパス(nullなら新規作成モード)
 let statsTagFilter = new Set(); // 実績タブのタグ別集計で絞り込み中のタグ(空なら全件表示)
 let expandedTimelineTaskIds = new Set(); // タイムラインでタップして展開中の短いタスクのID
+// タイムラインの箱の「選択」状態を、2段階で管理する:
+// - selectedTimelineTaskId: タップ(拡張可能なタスクは展開/縮小のトグルも
+//   同時に)、または長押しで設定される。アクセント色の枠で示す。
+// - resizeArmedTaskId: 長押しでのみ設定される(selectedTimelineTaskIdの
+//   部分集合、常にnullか同じタスクIDのどちらか)。armed中だけ大きな
+//   リサイズハンドルを表示する。selectedTimelineTaskIdがタップだけで
+//   別のタスクに変わった場合はresizeArmedTaskIdを必ずnullに戻す
+//   (selectTimelineTask参照)。
+// 日付切り替え・タスク削除等で選択中のタスクが表示対象から消えた場合は
+// renderTimelineHtml側で自動的にnullへ戻す(タブ切り替えでは意図的に
+// クリアしない。expandedTimelineTaskIdsと同様、タブを離れても状態を
+// 保つ方が一貫している)。
+let selectedTimelineTaskId = null;
+let resizeArmedTaskId = null;
+// タップ(トグル無し)や展開/縮小トグルなど、armedを伴わない選択の
+// 設定口を1箇所にまとめる(armedだけの部分集合という不変条件を
+// 呼び出し側ごとに気にしなくて済むようにするため)。
+function selectTimelineTask(id) {
+  selectedTimelineTaskId = id;
+  resizeArmedTaskId = null;
+}
 
 function getEntryForDate(dayKey) { return state.days[dayKey] || { tasks: [], finalized: false }; }
 function getTodayEntry() { return getEntryForDate(todayKey()); }
 function getSelectedEntry() { return getEntryForDate(selectedDate); }
-function incompleteTasksToday() { return getTodayEntry().tasks.filter(t => !t.completed); }
+function incompleteTasksFor(dayKey) { return getEntryForDate(dayKey).tasks.filter(t => !t.completed); }
 
+// 集中タブは予定タブとselectedDateを共用し、他日のタスクも実行対象に選べる。
+// 「今やっていること」に基づく提案(壁時計のnowMinとの突き合わせ)は実際の
+// 今日を見ている時だけ意味を持つため、他日を見ている時は単純に開始時刻が
+// 最も早い未完了タスクを提案する。
 function suggestTaskId() {
-  const tasks = incompleteTasksToday();
+  const tasks = incompleteTasksFor(selectedDate);
   if (tasks.length === 0) return null;
+  const sortedByStart = [...tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  if (selectedDate !== todayKey()) return sortedByStart[0].id;
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const current = tasks.find(t => toMinutes(t.startTime) <= nowMin && nowMin < toMinutes(t.endTime));
   if (current) return current.id;
-  const upcoming = tasks.filter(t => toMinutes(t.startTime) >= nowMin)
-    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
-  return (upcoming[0] || tasks[0]).id;
+  const upcoming = sortedByStart.filter(t => toMinutes(t.startTime) >= nowMin);
+  return (upcoming[0] || sortedByStart[0]).id;
 }
 function computeNowStatus(dayEntry) {
   const now = new Date();
@@ -1380,34 +1490,56 @@ function timelineTotalExtra(regions) {
 // 見えるバグを避けるため)。短いタスクはタップで一時的に展開でき、
 // 展開すると高さがFULL_CONTENT_PXまで広がり(幅は変えない)、その分
 // 後続のタイムライン全体が押し下げられる(computeTimelineBreakpoints参照)。
-function timelineTaskBoxHtml(t, isToday, top, height, isExpanded, driverTaskId) {
+function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpandable, isSelected, isArmed) {
   const showFull = height >= FULL_CONTENT_PX;
-  // 今日のタイムラインは箱本体タップ=集中タブへ選択遷移、他日は箱本体タップ=編集
-  // (集中タブは常に実際の今日しか扱わないため、他日のタスクを「集中で選択」
-  // しても意味が無い。他日での編集手段はこのタップが唯一になる)。短い箱は
-  // 情報が見えていない状態でいきなり選択/編集に飛ぶと事故りやすいため、
-  // まずタップで展開させる。
-  const boxAction = !showFull ? "timeline:toggle-expand" : (isToday ? "task:select-focus" : "task:edit-open");
+  // 箱本体タップの意味は「拡張可能(または現在拡張中で巻き込まれている
+  // ものも含む)なタスクは展開/縮小のトグル」「それ以外は選択」の二択に
+  // する。集中タブへの遷移(⏱)・編集(✏️)はそれぞれ専用ボタンからのみ
+  // 行い、箱本体タップの役割からは外した(以前は今日/他日で選択遷移/編集に
+  // 分かれていたが、集中タブ自体が日付ナビを持つようになり今日限定で
+  // 分岐する理由が無くなったため、まとめて廃止した)。
+  // トグルの対象は自分自身のIDではなく必ずdriverTaskId(展開中でなければ
+  // 通常t.id自身と一致する)を使う。他の展開タスクの窓に巻き込まれて
+  // 一緒に拡大されているだけのタスク(自分自身はexpandedTimelineTaskIds
+  // に入っていない)をタップした時、実際に展開を解除すべきなのは起点の
+  // タスクの方だからである(以前の▲閉じるボタンと全く同じ対象選定
+  // ロジックを、ボタンではなく箱本体タップに統合した)。
+  const canToggleViaTap = isExpanded || isExpandable;
+  const boxAction = canToggleViaTap ? "timeline:toggle-expand" : "timeline:select";
   const tagsHtml = (showFull && t.tags && t.tags.length)
     ? `<div class="task-tags">${t.tags.map(tag => `<span class="chip static">🏷️${escapeHtml(tagChipLabel(tag))}</span>`).join("")}</div>`
     : "";
-  // 他日では箱本体タップ(task:edit-open)と同じ動作になり機能的には冗長だが、
-  // 今日/他日で箱の見た目が変わらないよう(統一感のため)常時表示している。
-  const editBtn = showFull
-    ? `<button class="icon-btn timeline-edit-btn" data-action="task:edit-open" data-id="${t.id}" data-day="${selectedDate}" aria-label="編集">✏️</button>`
+  // ✏️(編集)・⏱(集中タブへ)は今日・他日を問わず常設している(統一感の
+  // ため)。⏱は選んだ上でselectedDateをそのタスクの日に合わせて集中タブへ
+  // 切り替える(集中タブ自体がselectedDateを共用する日付ナビを持つように
+  // なったため、今日限定にする理由が無い)。
+  // ⏱(U+23F1 STOPWATCH)はUnicode上は絵文字ブロックに属するが既定の
+  // 提示スタイルがtext presentation(環境によっては色の付かない細い
+  // 線画で描画される)なため、実質的に◀▶↶↷と同じ「非絵文字の記号
+  // アイコン」カテゴリに入る。glyph-icon-btnクラス(背景+枠線の円)を
+  // 付けないとライト/ダーク双方で見づらくなる問題を過去に繰り返し指摘
+  // されており、新規追加時は指摘を受ける前から最初に付けるはずだった
+  // ものを付け忘れていた。✏️は常に色付きで描画される真の絵文字のため
+  // 対象外(ヘッダーの↶↷とglyph-icon-btn無しの🏷️⚙️が同じ行で混在して
+  // いるのと同じ考え方)。
+  const actionButtons = showFull
+    ? `<div class="timeline-task-actions">
+         <button class="icon-btn glyph-icon-btn timeline-task-action-btn" data-action="task:select-focus" data-id="${t.id}" data-day="${selectedDate}" aria-label="集中タブへ">⏱</button>
+         <button class="icon-btn timeline-task-action-btn" data-action="task:edit-open" data-id="${t.id}" data-day="${selectedDate}" aria-label="編集">✏️</button>
+       </div>`
     : "";
-  // data-idは自分自身(t.id)ではなくdriverTaskId(実際に展開の起点になって
-  // いるタスク)を指す。他の展開タスクの窓に巻き込まれて一緒に拡大されて
-  // いるだけのタスク(自分自身はexpandedTimelineTaskIdsに入っていない)の
-  // 閉じるボタンを押した時、自分自身をトグルしても何も変わらない
-  // (そもそも入っていないため)。実際に展開を解除すべきなのは起点の
-  // タスクの方なので、driverTaskIdを使う(通常の自分自身が展開起点の
-  // 場合はdriverTaskId===t.idなので、これまで通りの挙動になる)。
-  const collapseBtn = isExpanded
-    ? `<button class="icon-btn timeline-collapse-btn" data-action="timeline:toggle-expand" data-id="${driverTaskId}" aria-label="折りたたむ">▲ 閉じる</button>`
-    : "";
-  const expandHint = (!showFull)
-    ? `<span class="timeline-expand-hint">⌄</span>` : "";
+  // タスクが「展開中」「縮小中(展開可能)」「そもそも開閉しない」のどれかを
+  // 常時ヒントとして示す(以前は▲閉じるボタンがこの役割も兼ねていたが、
+  // ボタン自体を廃止したタップ=トグル統合の際に見た目の手がかりが
+  // 無くなってしまっていた、というユーザー指摘)。isExpandedを優先する
+  // 理由: 展開領域に巻き込まれているだけ(自分自身はexpandedTimelineTaskIds
+  // には入っていない)のタスクは、必ずしもshowFull(高さがFULL_CONTENT_PX
+  // 以上)になるとは限らない(巻き込み先の拡大率次第)が、見た目が
+  // 自然な高さより伸びている以上「展開中(タップで縮小できる)」ことを
+  // 示すべきだから。
+  const expandHint = isExpanded
+    ? `<span class="timeline-expand-hint">⌃</span>`
+    : (!showFull ? `<span class="timeline-expand-hint">⌄</span>` : "");
   const body = showFull
     ? `<div class="timeline-task-title ${t.completed ? "done" : ""}">${escapeHtml(t.title)}</div>
        <div class="timeline-task-meta">${t.startTime}〜${t.endTime}・実績${formatDuration(t.actualMinutes)}</div>
@@ -1418,25 +1550,29 @@ function timelineTaskBoxHtml(t, isToday, top, height, isExpanded, driverTaskId) 
   // 参照しない(computeDragPreview参照)。そのため展開中(高さが架空)でも
   // 計算自体は常に正しく、展開中だけリサイズを禁止する理由は無い。箱が
   // 低すぎる場合だけ、上下のつかみ領域が重なって移動の判定領域が無くなる
-  // ため描画しない(MIN_RESIZE_BOX_PX参照。展開中は常にFULL_CONTENT_PXの
-  // 高さがあるためこの条件には掛からない)。
-  // 展開中は右下に▲閉じるボタンが同時に表示される。ボタンの位置は
-  // 動かさない方針(閉じるボタンを優先)にしたため、代わりに下端ハンドルの
-  // 右側を大きく空けてボタンと重ならないようにする。
-  const resizeHandles = (height >= MIN_RESIZE_BOX_PX)
-    ? `<div class="timeline-resize-handle top" data-resize="top" aria-hidden="true" style="height:${DRAG_EDGE_ZONE_PX}px"></div>
-       <div class="timeline-resize-handle bottom" data-resize="bottom" aria-hidden="true" style="height:${DRAG_EDGE_ZONE_PX}px${isExpanded ? ";right:88px" : ""}"></div>`
+  // ため描画しない(MIN_RESIZE_BOX_PX/MIN_RESIZE_BOX_PX_PASSIVE参照)。
+  // リサイズハンドルは常に描画する(ハイブリッド方式): armed(長押しで
+  // 選択済み)の箱は大きく見えるハンドル、それ以外は控えめな常時ゾーンを
+  // 描画する。どちらもDOM要素として存在するため、timelinePointerDownの
+  // 当たり判定(closest(".timeline-resize-handle"))は同じロジックのまま
+  // 両方に対応できる(見た目のサイズ違いは.armedクラスとインラインの
+  // heightだけで表現する)。
+  const edgeZonePx = isArmed ? DRAG_EDGE_ZONE_PX : PASSIVE_DRAG_EDGE_ZONE_PX;
+  const minResizeBoxPx = isArmed ? MIN_RESIZE_BOX_PX : MIN_RESIZE_BOX_PX_PASSIVE;
+  const armedClass = isArmed ? " armed" : "";
+  const resizeHandles = (height >= minResizeBoxPx)
+    ? `<div class="timeline-resize-handle${armedClass} top" data-resize="top" aria-hidden="true" style="height:${edgeZonePx}px"></div>
+       <div class="timeline-resize-handle${armedClass} bottom" data-resize="bottom" aria-hidden="true" style="height:${edgeZonePx}px"></div>`
     : "";
   return `
-    <div class="timeline-task ${t.completed ? "done" : ""}${isExpanded ? " expanded" : ""}" style="top:${top}px;height:${height}px"
-         data-action="${boxAction}" data-id="${t.id}" data-day="${selectedDate}">
+    <div class="timeline-task ${t.completed ? "done" : ""}${isExpanded ? " expanded" : ""}${isSelected ? " selected" : ""}" style="top:${top}px;height:${height}px"
+         data-action="${boxAction}" data-id="${t.id}" data-driver-id="${driverTaskId}" data-day="${selectedDate}">
       <label class="timeline-check">
         <input type="checkbox" data-action="toggle" data-id="${t.id}" ${t.completed ? "checked" : ""}>
       </label>
       <div class="timeline-task-body">${body}</div>
       ${expandHint}
-      ${editBtn}
-      ${collapseBtn}
+      ${actionButtons}
       ${resizeHandles}
     </div>`;
 }
@@ -1497,6 +1633,7 @@ function renderNowBanner() {
       // 選択遷移できるようにする(次の予定/空き時間バナーはタップ不可のまま)。
       el.dataset.action = "task:select-focus";
       el.dataset.id = status.task.id;
+      el.dataset.day = todayKey();
     } else if (status.next) {
       el.className = "now-banner";
       el.innerHTML = `☕ 今は空き時間です。次は ${status.next.startTime}〜 ${escapeHtml(status.next.title)}`;
@@ -1521,6 +1658,19 @@ function renderNowBanner() {
 }
 function renderTimelineHtml(entry) {
   const isToday = selectedDate === todayKey();
+  // 選択中のタスクが(日付切り替え・削除等で)この日のエントリに存在しない
+  // 場合は選択を自動的に解除する。呼び出し側ごとに個別のクリア処理を
+  // 書かなくて済むよう、再描画のたびにここで自己修復する。
+  if (selectedTimelineTaskId && !entry.tasks.some(t => t.id === selectedTimelineTaskId)) {
+    selectedTimelineTaskId = null;
+  }
+  // resizeArmedTaskIdはselectedTimelineTaskIdの部分集合という不変条件
+  // (selectTimelineTask/armTimelineSelection参照)。上記の自己修復で
+  // selectedTimelineTaskIdだけがnullに戻った場合に取り残さないよう、
+  // ここでも同じ条件で揃える。
+  if (resizeArmedTaskId && resizeArmedTaskId !== selectedTimelineTaskId) {
+    resizeArmedTaskId = null;
+  }
   const sorted = [...entry.tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
   const breakpoints = computeTimelineBreakpoints(sorted);
   let hourRows = "";
@@ -1551,14 +1701,19 @@ function renderTimelineHtml(entry) {
     // 「見た目上展開されているか」は、自分自身がexpandedTimelineTaskIdsに
     // 入っているかではなく、実際にnaturalHeightより高く描画されているかで
     // 判定する。他の展開タスクの窓に巻き込まれて一緒に拡大されているタスク
-    // (自分自身は未展開)も見た目は区別が付かないため、同じく▲閉じるボタンを
-    // 出す。ボタンを押した時は、実際に展開の起点になっているタスク
-    // (driverTaskId)の展開を解除する(巻き込まれているだけの自分自身を
-    // 解除してもトグルの意味を持たないため)。
+    // (自分自身は未展開)も見た目は区別が付かないため、同じくタップで
+    // トグルできるようにする。トグルする対象は、実際に展開の起点になって
+    // いるタスク(driverTaskId)であり、巻き込まれているだけの自分自身の
+    // IDをトグルしてもexpandedTimelineTaskIdsに変化が起きない
+    // (timelineTaskBoxHtml参照)。
     const isExpanded = height > naturalHeight + 0.01;
     const region = isExpanded ? breakpoints.find(r => r.ws <= startMin && endMin <= r.we) : null;
     const driverTaskId = region ? region.driverTaskId : t.id;
-    return timelineTaskBoxHtml(t, isToday, top, height, isExpanded, driverTaskId);
+    const isExpandable = naturalHeight < FULL_CONTENT_PX;
+    return timelineTaskBoxHtml(
+      t, top, height, isExpanded, driverTaskId, isExpandable,
+      t.id === selectedTimelineTaskId, t.id === resizeArmedTaskId
+    );
   }).join("");
   const totalHeight = 24 * 60 * PX_PER_MIN + timelineTotalExtra(breakpoints);
   return `
@@ -1718,9 +1873,46 @@ function deleteFromTaskModal() {
   renderHeaderStreak();
 }
 
-function renderFocusView() {
+// 集中タブ専用の日付ナビ。予定タブのrenderDateNavHtml()とほぼ同じ見た目だが、
+// ▾/▴(短いタスクの全展開/全折りたたみ)は予定タブのタイムライン固有の
+// 機能のためここには含めない。selectedDateを共用しているため、date:prev
+// 等のアクション自体は予定タブと共通のハンドラで処理される。
+// .today-sticky-header(予定タブの日付ナビ・バナーと同じクラス)で包む
+// 理由: 予定タブに合わせて日付ナビを追加したのに背景色だけページ地の色
+// (var(--bg))のままだと、見た目上「予定タブのヘッダー」と「集中タブの
+// この部分」が同じ役割なのに違う見た目になってしまうという指摘を受けた。
+// クラスを共用することで色(var(--header-bg))だけでなく、mainのpaddingを
+// 打ち消して画面幅いっぱいに広げる負のマージン・position:stickyも
+// 揃って手に入る(集中タブの内容は通常短く、実際にスクロールしてsticky
+// 効果が見えることは少ないが、揃えておいて損はない)。
+function renderFocusDateNavHtml() {
+  const d = dayKeyToDate(selectedDate);
+  const isToday = selectedDate === todayKey();
+  return `
+    <div class="today-sticky-header">
+      <div class="date-nav">
+        <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日">◀</button>
+        <span class="date-label">${formatJapaneseDate(d)}</span>
+        <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日">▶</button>
+        <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー">📅</button>
+        <button class="today-jump" data-action="date:today" aria-label="今日に戻る" ${isToday ? "disabled" : ""}>今日</button>
+      </div>
+    </div>`;
+}
+// 集中タブは予定タブとselectedDateを共用し、他日のタスクも選んで実行できる
+// (壁時計は常に「今」進むため、タイマー自体の挙動はどの日を見ていても
+// 変わらない。streak・「今: ◯◯」バナーだけは引き続きtodayKey()固定で、
+// このタブの日付ナビとは独立している)。
+// resetScroll:trueはタブ切り替え・日付ナビ操作の時だけ指定する(新しい
+// 日付ナビが箱の先頭に増えたことで、予定タブ側でスクロールしたままこの
+// タブに来ると日付ナビが画面外に隠れる問題があった。予定タブの
+// renderTodayView({autoscroll})と同じ考え方で、「新しい文脈に入る」
+// タイミングだけ#focusViewの先頭が見えるようmainのスクロール位置を
+// リセットする。それ以外の再描画(一時停止/再開等)ではその場の見た目を
+// 保つ)。
+function renderFocusView({ resetScroll = false } = {}) {
   const container = document.getElementById("focusView");
-  const entry = getTodayEntry();
+  const entry = getSelectedEntry();
   const session = state.activeSession;
 
   if (!session) {
@@ -1730,26 +1922,28 @@ function renderFocusView() {
   }
 
   // セッション中のタスクは、そのセッションが開始した日(session.dayKey)から
-  // 探す。日を跨いで実行中/一時停止中のまま残った場合、entry(=今日)には
-  // そのタスクが存在しないため、todayEntryだけを見ると常に見失う
-  // (以前はここでタスクが見つからず、タイトル・実績が表示されなくなる
-  // バグがあった)。
+  // 探す。日を跨いで実行中/一時停止中のまま残った場合や、セッション中に
+  // 日付ナビで別日へ移動した場合、entry(=selectedDate)にはそのタスクが
+  // 存在しないため、entryだけを見ると見失う(以前はここでタスクが見つからず、
+  // タイトル・実績が表示されなくなるバグがあった)。
   const sessionTask = session ? getEntryForDate(session.dayKey).tasks.find(t => t.id === session.taskId) : null;
-  const sessionTaskCrossDay = !!(session && !entry.tasks.some(t => t.id === session.taskId));
+  const sessionTaskOtherDay = !!(session && session.dayKey !== selectedDate);
 
   const selectedId = session ? session.taskId : focusSelectedTaskId;
   const selectedTask = session ? sessionTask : (entry.tasks.find(t => t.id === selectedId) || null);
-  // 通常は今日のタスクだけを選択肢にする。セッションのタスクが日を跨いで
-  // 今日のリストに存在しない場合だけ、先頭に追加してselectedとして見える
-  // ようにする(selectのdisabledと合わせて、他タスクへの切替はできないが
-  // 現在の対象が何かは正しく表示する)。
-  const optionSourceTasks = sessionTaskCrossDay && sessionTask ? [sessionTask, ...entry.tasks] : entry.tasks;
+  // 通常はselectedDateのタスクだけを選択肢にする。セッションのタスクが
+  // 別日(日を跨いだ、または日付ナビで移動した)でselectedDateのリストに
+  // 存在しない場合だけ、先頭に追加してselectedとして見えるようにする
+  // (selectのdisabledと合わせて、他タスクへの切替はできないが現在の対象が
+  // 何かは正しく表示する)。
+  const optionSourceTasks = sessionTaskOtherDay && sessionTask ? [sessionTask, ...entry.tasks] : entry.tasks;
   const options = optionSourceTasks.map(t => {
     const isPausedHere = !!(session && session.paused && session.taskId === t.id);
     const pausedMark = (state.pausedSessions[t.id] || isPausedHere) ? "⏸ " : "";
     const doneMark = t.completed ? "✓ " : "";
-    const crossDayMark = (sessionTaskCrossDay && t.id === session.taskId) ? "(前日から継続) " : "";
-    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${crossDayMark}${escapeHtml(t.title)}</option>`;
+    const otherDayMark = (sessionTaskOtherDay && t.id === session.taskId)
+      ? `(${formatJapaneseDate(dayKeyToDate(session.dayKey))}から継続) ` : "";
+    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${otherDayMark}${escapeHtml(t.title)}</option>`;
   }).join("");
 
   let timerHtml;
@@ -1769,8 +1963,8 @@ function renderFocusView() {
           : '<button class="btn" data-action="pause">一時停止</button>'}
         <button class="btn danger-outline" data-action="finish">終了</button>
       </div>
-      ${session.paused && !sessionTaskCrossDay ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}
-      ${sessionTaskCrossDay ? '<div class="timer-hint">日をまたいで続いているタスクのため、他のタスクへの切り替えはできません。先に「終了」してください。</div>' : ""}`;
+      ${session.paused && !sessionTaskOtherDay ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}
+      ${sessionTaskOtherDay ? '<div class="timer-hint">表示中の日付とは別の日のタスクのため、他のタスクへの切り替えはできません。先に「終了」してください。</div>' : ""}`;
   } else {
     timerHtml = `
       <div class="timer-phase">タスクを選んで開始</div>
@@ -1780,17 +1974,18 @@ function renderFocusView() {
       </div>`;
   }
 
-  // 実行中(一時停止していない)のセッションに加え、日を跨いだセッションも
+  // 実行中(一時停止していない)のセッションに加え、別日のセッションも
   // 選択肢を固定する(上記のoptionSourceTasksの特別扱いと対にして、
-  // 「今日のタスクに切り替えたつもりが日を跨いだタスクの残り状態を壊す」
+  // 「表示中の日のタスクに切り替えたつもりが別日のタスクの残り状態を壊す」
   // ことを防ぐ)。
-  const selectDisabled = !!(session && (!session.paused || sessionTaskCrossDay));
+  const selectDisabled = !!(session && (!session.paused || sessionTaskOtherDay));
   container.innerHTML = `
+    ${renderFocusDateNavHtml()}
     <div class="focus-select-row">
       <select id="focusTaskSelect" ${selectDisabled ? "disabled" : ""}>
         ${optionSourceTasks.length ? options : '<option value="">タスクがありません</option>'}
       </select>
-      <button class="icon-btn" data-action="task:edit-open" data-id="${selectedId || ""}" data-day="${session ? session.dayKey : todayKey()}"
+      <button class="icon-btn" data-action="task:edit-open" data-id="${selectedId || ""}" data-day="${session ? session.dayKey : selectedDate}"
         aria-label="編集" ${selectedId ? "" : "disabled"}>✏️</button>
       <button class="icon-btn danger" data-action="focus:delete-selected" data-id="${selectedId || ""}"
         aria-label="削除" ${selectedId ? "" : "disabled"}>🗑</button>
@@ -1798,6 +1993,10 @@ function renderFocusView() {
     ${renderFocusTaskDetailHtml(selectedTask)}
     <div class="timer-card">${timerHtml}</div>
   `;
+  if (resetScroll) {
+    const main = document.querySelector("main");
+    if (main) main.scrollTop = 0;
+  }
 }
 function renderFocusTaskDetailHtml(task) {
   if (!task) return "";
@@ -1916,8 +2115,16 @@ function switchView(view) {
   currentView = view;
   renderHeaderStreak();
   if (view === "today") renderTodayView({ autoscroll: true });
-  if (view === "focus") renderFocusView();
+  if (view === "focus") renderFocusView({ resetScroll: true });
   if (view === "stats") renderStatsView();
+}
+// 予定タブ・集中タブはselectedDateを共用しているため、日付ナビ(date:prev等・
+// カレンダーのcal:pick)は現在表示中のタブに応じてどちらか一方だけを
+// 再描画する(非表示のタブは次に切り替えられた時に作り直されるため
+// 先回りの再描画は不要)。
+function renderCurrentDateView() {
+  if (currentView === "today") renderTodayView({ autoscroll: true });
+  if (currentView === "focus") renderFocusView({ resetScroll: true });
 }
 
 // ---- 6a. カレンダーモーダル ----
@@ -2112,9 +2319,14 @@ let autoScrollRAF = null;
 let lastDragBox = null;
 let lastDragEndAt = 0;
 const DRAG_CLICK_SUPPRESS_MS = 500;
+// 長押しで箱を「選択」状態にするためのタイマー。閾値以上動いた(=通常の
+// 移動/リサイズドラッグだと判明した)場合や、閾値未満のまま指が離れた場合は
+// timelinePointerMove/Up/Cancelが必ず破棄する(このタイマーだけが生き残って
+// 指を離した後に遅れて発火する、という事故を防ぐため)。
+let longPressTimer = null;
 function timelinePointerDown(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
-  if (e.target.closest("input, button")) return; // チェックボックス/✏️/▲は通常のタップに任せる
+  if (e.target.closest("input, button")) return; // チェックボックス/⏱/✏️は通常のタップに任せる
   const box = e.target.closest(".timeline-task");
   if (!box) return;
   const taskId = box.dataset.id, dayKey = box.dataset.day;
@@ -2123,12 +2335,28 @@ function timelinePointerDown(e) {
   // リサイズの可否・上端/下端の判定は、DOM上に実際に描画されている
   // .timeline-resize-handle要素の有無で行う(offsetYのpx計算を独自に
   // 持たない)。これにより「見た目上つかめる領域」と「実際に反応する領域」
-  // が常に一致し、箱が低すぎる場合(MIN_RESIZE_BOX_PX未満)にハンドル自体を
-  // 描画しないrenderTimelineHtml側の判断がそのままドラッグの挙動にも
-  // 反映される。
+  // が常に一致し、箱が低すぎる場合(MIN_RESIZE_BOX_PX/_PASSIVE未満)に
+  // ハンドル自体を描画しないrenderTimelineHtml側の判断がそのままドラッグの
+  // 挙動にも反映される。ハンドルは選択の有無に関わらず常に描画される
+  // (ハイブリッド方式。armedかどうかはサイズ・見た目が変わるだけで、
+  // 当たり判定のロジック自体はどちらでも同じ)。
   const handle = e.target.closest(".timeline-resize-handle");
   const mode = handle ? (handle.classList.contains("top") ? "resize-top" : "resize-bottom") : "move";
   const main = document.querySelector("main");
+  // breakpoints(展開中の窓ごとのk・offset)をドラッグ開始時に1回だけ計算し、
+  // ドラッグ中は固定する。他のタスクの時刻はドラッグ中(コミット前)は
+  // 変化しないため、breakpoints自体もドラッグ中は不変(state.daysを
+  // 変更するのはpointerupでのコミット時だけ)。この固定されたbreakpoints
+  // を使ってyToMinute/minuteToYで変換することで、ドラッグ中にポインタが
+  // 「展開されている区間」と「されていない区間」をまたいでも、区間ごとに
+  // 正しい縮尺(展開されていれば拡大率通り、されていなければ通常の
+  // PX_PER_MIN)で分に変換できる(以前は箱自身の拡大率をドラッグ全体で
+  // 固定していたが、ユーザーから「タイムラインには拡大されている箇所と
+  // されていない箇所があるので、ある範囲までは2倍、ある範囲からは1倍に
+  // 戻るような制御が必要」という指摘を受け、区間ごとに正しく切り替わる
+  // 方式に作り直した)。
+  const sortedForDrag = [...getEntryForDate(dayKey).tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  const breakpoints = computeTimelineBreakpoints(sortedForDrag);
   dragState = {
     pointerId: e.pointerId, box, taskId, dayKey, mode,
     startClientY: e.clientY, lastClientY: e.clientY,
@@ -2137,43 +2365,97 @@ function timelinePointerDown(e) {
     startHeightPx: parseFloat(box.style.height),
     origStartMin: toMinutes(task.startTime),
     origEndMin: toMinutes(task.endTime),
+    breakpoints,
     moved: false,
     previewStartMin: null, previewEndMin: null,
   };
+  // 既にarmed(長押し済み)の箱は長押し不要。まだarmedでない箱への押下は、
+  // 常時ゾーンを直接掴んだ場合(mode: resize-*)であっても長押し候補にする
+  // (閾値以上動けば通常の移動/直接リサイズドラッグとしてtimelinePointerMove
+  // が打ち切る。動かないまま指を離せば従来通りタップとして扱われる)。
+  if (resizeArmedTaskId !== taskId) {
+    const pointerId = e.pointerId;
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      if (!dragState || dragState.pointerId !== pointerId || dragState.moved) return;
+      armTimelineSelection(dragState);
+    }, LONG_PRESS_MS);
+  }
+}
+// 長押しが確定した時点の処理。選択+armedの確定(selectedTimelineTaskId・
+// resizeArmedTaskId・再描画)はここで即座に反映するが、dragState自体は
+// 指を離すまであえて残す(armedフラグを立てるだけ)。合成clickの抑制
+// (lastDragBox/lastDragEndAt)は実際にpointerupが起きた時点で行う:
+// ここ(長押し確定の瞬間)で抑制ウィンドウを開始してしまうと、ハンドルが
+// 見えてから指を離すまでの間(ユーザーが確認して間を置くことは普通に
+// ある)がDRAG_CLICK_SUPPRESS_MSを超えた場合に抑制が切れてしまい、選択
+// 直後のリフト操作で意図せずトグル/選択が起きてしまう。
+// リサイズの実行自体は、この時点では行わず、指を離して改めて(大きく
+// なった)ハンドルを掴む次のジェスチャーに委ねる(選択→大きなハンドルが
+// 見えている状態からドラッグ、という二段階の方が「掴んだつもりが移動に
+// なる」事故に強い)。
+function armTimelineSelection(ds) {
+  ds.armed = true;
+  selectedTimelineTaskId = ds.taskId;
+  resizeArmedTaskId = ds.taskId;
+  renderTodayView();
 }
 // ポインタの絶対位置(clientY)ではなく、ドラッグ開始からの相対移動量
-// (ポインタの移動 + その間にページがスクロールした量)を分に変換する。
-// 自動スクロール(後述)でmain.scrollTopが変化しても、指が画面上で
+// (ポインタの移動 + その間にページがスクロールした量)をピクセル単位で
+// 返す。自動スクロール(後述)でmain.scrollTopが変化しても、指が画面上で
 // 実際に動いた量と体感を一致させるために両方を合算する必要がある。
+// (分への変換はcomputeDragPreview側でyToMinuteを使って行う。)
 function computeDragEffectiveDeltaY() {
   const main = document.querySelector("main");
   const scrollDelta = (main ? main.scrollTop : 0) - dragState.startScrollTop;
   return (dragState.lastClientY - dragState.startClientY) + scrollDelta;
 }
+// ドラッグ対象の箱の「動いている方の端」(move/resize-topは上端、
+// resize-bottomは下端)の、ドラッグ開始時点でのドキュメント座標に
+// 実効移動量(computeDragEffectiveDeltaY)を足した絶対Y座標を、
+// yToMinute(dragState.breakpoints、ドラッグ開始時点で固定)で分に変換する。
+// 以前はポインタの移動量をPX_PER_MIN(またはドラッグ開始時に固定した
+// 箱自身の拡大率)の一定比率で分に変換していたが、ユーザーから「タイム
+// ラインには展開されている箇所とされていない箇所があるので、ある範囲
+// までは2倍・ある範囲からは1倍に戻るような区間ごとの制御が必要」という
+// 指摘を受けた。一定比率(グローバル定数でも、ドラッグ開始時に固定した
+// 箱自身の拡大率でも)では、ドラッグ中にポインタが「展開されている区間」
+// と「されていない区間」をまたいだ場合に対応できない。yToMinuteは
+// レンダリング側(minuteToYの逆関数)がまさにこの「区間ごとに正しい縮尺で
+// 変換する」処理を既に実装済みだったため、ドラッグ側でも同じ関数を
+// そのまま使うことで、複雑な「今ポインタがどの窓にいるか」の判定を
+// 自前で書き足さずに区間をまたいだドラッグに対応できた。
+function computeDragEdgeMinute(edgeStartPx) {
+  return yToMinute(edgeStartPx + computeDragEffectiveDeltaY(), dragState.breakpoints);
+}
 function computeDragPreview() {
-  const deltaMinSnapped = snapMinutesToGrid(computeDragEffectiveDeltaY() / PX_PER_MIN);
   let newStartMin = dragState.origStartMin, newEndMin = dragState.origEndMin;
   if (dragState.mode === "move") {
-    newStartMin = dragState.origStartMin + deltaMinSnapped;
-    newEndMin = dragState.origEndMin + deltaMinSnapped;
+    newStartMin = snapMinutesToGrid(computeDragEdgeMinute(dragState.startTopPx));
     const dur = dragState.origEndMin - dragState.origStartMin;
+    newEndMin = newStartMin + dur;
     if (newStartMin < 0) { newStartMin = 0; newEndMin = dur; }
     if (newEndMin > 24 * 60) { newEndMin = 24 * 60; newStartMin = 24 * 60 - dur; }
   } else if (dragState.mode === "resize-top") {
-    newStartMin = Math.max(0, Math.min(dragState.origEndMin - TIMELINE_SNAP_MIN, dragState.origStartMin + deltaMinSnapped));
+    const rawStartMin = snapMinutesToGrid(computeDragEdgeMinute(dragState.startTopPx));
+    newStartMin = Math.max(0, Math.min(dragState.origEndMin - TIMELINE_SNAP_MIN, rawStartMin));
   } else { // resize-bottom
-    newEndMin = Math.min(24 * 60, Math.max(dragState.origStartMin + TIMELINE_SNAP_MIN, dragState.origEndMin + deltaMinSnapped));
+    const rawEndMin = snapMinutesToGrid(computeDragEdgeMinute(dragState.startTopPx + dragState.startHeightPx));
+    newEndMin = Math.min(24 * 60, Math.max(dragState.origStartMin + TIMELINE_SNAP_MIN, rawEndMin));
   }
   dragState.previewStartMin = newStartMin;
   dragState.previewEndMin = newEndMin;
-  // 高さは移動時(move)は常に元のまま(展開中の架空の高さもそのまま
-  // 保たれる)。リサイズ時は実際の分数から計算するため、展開中の箱を
-  // リサイズし始めた瞬間、架空の高さから実際の(自然な)高さへ見た目が
-  // 一段階だけジャンプする(数値としては常に正しい。時刻の計算は
-  // dragState.origStartMin/origEndMinというタスクの実データだけを基準にした
-  // 相対差分で行っており、箱の見た目上の位置は一切参照しないため)。
-  const previewHeightPx = dragState.mode === "move" ? dragState.startHeightPx : (newEndMin - newStartMin) * PX_PER_MIN;
-  const previewTopPx = dragState.startTopPx + (newStartMin - dragState.origStartMin) * PX_PER_MIN;
+  // top/heightのプレビューはminuteToY(実際のレンダリングで使うのと同じ
+  // 変換関数)で計算する。これにより、ドラッグ中のプレビューは「今その
+  // 位置に確定した場合に実際にレンダリングされる見た目」と常に一致する
+  // (展開されている区間・されていない区間をまたいでも自然に正しい高さ・
+  // 位置になり、以前あった「リサイズを始めた瞬間に見た目が一段階ジャンプ
+  // する」不整合も起きない)。moveでも高さを毎回computeし直す(所要時間は
+  // newEndMin-newStartMinとして常に元と同じ分数を保つが、展開されている
+  // 区間に入ればその分だけ見た目の高さも拡大されるのが正しい。他タスクが
+  // 展開に巻き込まれて拡大されるのと同じ理屈)。
+  const previewTopPx = minuteToY(newStartMin, dragState.breakpoints);
+  const previewHeightPx = minuteToY(newEndMin, dragState.breakpoints) - previewTopPx;
   dragState.box.style.top = previewTopPx + "px";
   dragState.box.style.height = previewHeightPx + "px";
   updateDragTimeTooltip(dragState.lastClientY, newStartMin, newEndMin);
@@ -2211,8 +2493,15 @@ function autoScrollTick() {
 function timelinePointerMove(e) {
   if (!dragState || e.pointerId !== dragState.pointerId) return;
   dragState.lastClientY = e.clientY;
+  // 選択確定後(armTimelineSelection)は、このまま指を離すまで同じタッチでは
+  // 何もしない(離して改めてハンドルを掴む次のジェスチャーに委ねる設計。
+  // armTimelineSelectionのコメント参照)。
+  if (dragState.armed) return;
   if (!dragState.moved) {
     if (Math.abs(computeDragEffectiveDeltaY()) < DRAG_MOVE_THRESHOLD_PX) return;
+    // 閾値を超えて動いた時点で「長押しでの選択」候補ではなく通常の移動
+    // ドラッグだと確定するため、保留中のタイマーを破棄する。
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     dragState.moved = true;
     dragState.box.classList.add("dragging");
     document.body.style.cursor = dragState.mode === "move" ? "grabbing" : "ns-resize";
@@ -2228,6 +2517,7 @@ function timelinePointerMove(e) {
 }
 function timelinePointerUp(e) {
   if (!dragState || e.pointerId !== dragState.pointerId) return;
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   const ds = dragState;
   dragState = null;
   if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
@@ -2237,6 +2527,14 @@ function timelinePointerUp(e) {
     ds.box.releasePointerCapture(e.pointerId);
   }
   hideDragTimeTooltip();
+  if (ds.armed) {
+    // 長押しによる選択は既にarmTimelineSelectionで確定済み。ここでは
+    // 実際に指を離した今この瞬間を起点に、直後の合成clickだけを抑制する
+    // (armTimelineSelectionのコメント参照。長押し確定の瞬間を起点にすると
+    // 抑制ウィンドウが早く切れすぎることがある)。
+    lastDragBox = ds.box; lastDragEndAt = Date.now();
+    return;
+  }
   if (!ds.moved) return; // ただのタップ。通常のclickイベントに処理を譲る。
   lastDragBox = ds.box; lastDragEndAt = Date.now();
   const newStartMin = ds.previewStartMin, newEndMin = ds.previewEndMin;
@@ -2270,6 +2568,7 @@ function timelinePointerUp(e) {
 }
 function timelinePointerCancel(e) {
   if (!dragState || e.pointerId !== dragState.pointerId) return;
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
   document.body.style.cursor = "";
   dragState.box.classList.remove("dragging");
@@ -2327,6 +2626,17 @@ document.addEventListener("click", (e) => {
     lastDragBox = null;
     return;
   }
+  // 選択中の箱以外をタップしたら選択を解除する(別の箱・空いた場所・
+  // タブ/日付ナビ等、対象が何であっても「今選択中の箱そのものではない」
+  // 操作は選択解除の意思表示とみなす)。ここでの再描画はe.targetが指す
+  // DOM要素自体を作り直す(innerHTMLで丸ごと置き換える)が、置き換え後も
+  // e.target自身の参照とその祖先方向のdata-action属性は生きたまま読み出せる
+  // (ドラッグ後の合成click抑制で使っているlastDragBoxと同じ前提)ため、
+  // この後に続く通常のクリック処理には影響しない。
+  if (selectedTimelineTaskId && !(draggedBox && draggedBox.dataset.id === selectedTimelineTaskId)) {
+    selectTimelineTask(null);
+    renderTodayView();
+  }
   const cell = e.target.closest(".heat-cell");
   if (cell) {
     const detail = document.getElementById("heatmapDetail");
@@ -2344,6 +2654,11 @@ document.addEventListener("click", (e) => {
     case "task:edit-save": saveTaskEditFromForm(); break;
     case "task:modal-delete": deleteFromTaskModal(); break;
     case "task:select-focus":
+      // 集中タブは予定タブとselectedDateを共用するため、遷移元のタスクが
+      // 属する日(btn.dataset.day)にselectedDate自体を合わせてから切り替える
+      // (他日のタスクの⏱ボタンから来た場合、集中タブが今日のリストの
+      // ままだと選んだタスクが選択肢に出ない)。
+      if (btn.dataset.day) selectedDate = btn.dataset.day;
       focusSelectedTaskId = id;
       switchView("focus");
       break;
@@ -2366,9 +2681,20 @@ document.addEventListener("click", (e) => {
       openTaskCreateModal(selectedDate, formatHHMM(startMin), formatHHMM(endMin));
       break;
     }
+    case "timeline:select": {
+      selectTimelineTask(id);
+      renderTodayView();
+      break;
+    }
     case "timeline:toggle-expand": {
-      if (expandedTimelineTaskIds.has(id)) expandedTimelineTaskIds.delete(id);
-      else expandedTimelineTaskIds.add(id);
+      // data-driver-idを使う(展開中の窓に巻き込まれているだけのタスクを
+      // タップした場合、実際に展開を解除すべきなのは起点のタスクの方で
+      // あり、自分自身のIDをトグルしてもexpandedTimelineTaskIdsに変化が
+      // 起きないため。timelineTaskBoxHtml参照)。
+      const targetId = btn.dataset.driverId || id;
+      if (expandedTimelineTaskIds.has(targetId)) expandedTimelineTaskIds.delete(targetId);
+      else expandedTimelineTaskIds.add(targetId);
+      selectTimelineTask(targetId);
       renderTodayView(); // スクロール位置を保ったまま、その場で開閉するだけ
       break;
     }
@@ -2389,9 +2715,9 @@ document.addEventListener("click", (e) => {
       btn.classList.toggle("selected");
       break;
     }
-    case "date:prev": selectedDate = addDays(selectedDate, -1); renderTodayView({ autoscroll: true }); break;
-    case "date:next": selectedDate = addDays(selectedDate, 1); renderTodayView({ autoscroll: true }); break;
-    case "date:today": selectedDate = todayKey(); renderTodayView({ autoscroll: true }); break;
+    case "date:prev": selectedDate = addDays(selectedDate, -1); renderCurrentDateView(); break;
+    case "date:next": selectedDate = addDays(selectedDate, 1); renderCurrentDateView(); break;
+    case "date:today": selectedDate = todayKey(); renderCurrentDateView(); break;
     case "cal:open": openCalendar(); break;
     case "cal:close": closeCalendar(); break;
     case "cal:prev-month":
@@ -2407,7 +2733,7 @@ document.addEventListener("click", (e) => {
     case "cal:pick":
       selectedDate = btn.dataset.day;
       closeCalendar();
-      renderTodayView({ autoscroll: true });
+      renderCurrentDateView();
       break;
     case "tags:open": openTagsModal(); break;
     case "tags:close": closeTagsModal(); break;
@@ -2485,7 +2811,10 @@ document.addEventListener("click", (e) => {
       }
       if (confirm("このタスクを削除しますか?")) {
         recordUndoPoint();
-        removeTask(state, todayKey(), id);
+        // hasSessionInProgress()がfalseだった時点でこのタスクは実行中/
+        // 一時停止中のセッションを持たないため、selectedDate(集中タブが
+        // 表示しているリストの日)で確実に見つかる。
+        removeTask(state, selectedDate, id);
         focusSelectedTaskId = null;
         saveState(state);
         renderFocusView();
