@@ -30,7 +30,7 @@
        タイムラインが間延びしないよう中央寄せする際に使う(下記
        .timeline-wrap・.timeline-add-fab参照。両者で同じ値を書き分けると
        片方だけ変更漏れが起きるため変数化している)。 */
-    --timeline-col-max-width: 640px;
+    --timeline-col-max-width: 760px;
     --heat-0: #e5e7eb;
     --heat-1: #bfdbfe;
     --heat-2: #93c5fd;
@@ -92,18 +92,18 @@
      すぐ下まで来ると特に見分けが付きにくかった。専用のvar(--header-bg)
      (タスクの箱の色とは別トーン)にして解決している。 */
   .app-header {
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 8px 16px; padding-top: calc(8px + env(safe-area-inset-top));
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 6px 14px; padding-top: calc(6px + env(safe-area-inset-top));
     background: var(--header-bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
   .app-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .app-title { font-size: 26px; margin: 0; }
-  .header-streak { font-size: 19px; color: var(--accent); }
+  .app-title { font-size: 20px; margin: 0; }
+  .header-streak { font-size: 15px; color: var(--accent); }
   .icon-btn {
-    border: none; background: transparent; font-size: 26px; padding: 10px; line-height: 1;
-    cursor: pointer; border-radius: 12px; min-width: 52px; min-height: 52px;
+    border: none; background: transparent; font-size: 20px; padding: 7px; line-height: 1;
+    cursor: pointer; border-radius: 10px; min-width: 44px; min-height: 44px;
   }
   .icon-btn:active { background: var(--border); }
   .icon-btn.danger { color: var(--danger); }
@@ -127,11 +127,11 @@
     padding-bottom: env(safe-area-inset-bottom); flex-shrink: 0;
   }
   .tab-btn {
-    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-    padding: 10px 0 12px; border: none; background: transparent; color: var(--tab-inactive);
-    font-size: 14px; cursor: pointer; min-height: 66px;
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 7px 0 9px; border: none; background: transparent; color: var(--tab-inactive);
+    font-size: 12px; cursor: pointer; min-height: 52px;
   }
-  .tab-btn .tab-icon { font-size: 29px; }
+  .tab-btn .tab-icon { font-size: 23px; }
   .tab-btn.active { color: var(--accent); font-weight: 600; }
 
   .view { display: none; }
@@ -343,12 +343,12 @@
   .chip-hint { font-size: 15px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .task-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; margin-bottom: 3px; }
 
-  .date-nav { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; }
-  .date-nav .date-label { flex: 1; text-align: center; font-size: 19px; color: var(--text-muted); }
-  .date-nav .today-jump { font-size: 15px; color: var(--accent); background: transparent; border: none; cursor: pointer; padding: 8px; }
+  .date-nav { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
+  .date-nav .date-label { flex: 1; text-align: center; font-size: 16px; color: var(--text-muted); }
+  .date-nav .today-jump { font-size: 13px; color: var(--accent); background: transparent; border: none; cursor: pointer; padding: 6px; }
   .date-nav-btn {
     background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);
-    border-radius: 50%; font-size: 19px;
+    border-radius: 50%; font-size: 16px;
   }
   .date-nav-btn:active { background: var(--border); }
   .date-nav .today-jump:disabled { opacity: 0.35; cursor: default; }
@@ -1533,6 +1533,26 @@ function yToMinute(y, regions) {
 function timelineTotalExtra(regions) {
   return regions.length ? regions[regions.length - 1].offsetAfter : 0;
 }
+// タスクをタップして畳んだ(expandedTimelineTaskIdsから外した)直後でも、
+// 隣接する別の独立展開中タスクの窓(clock-hour単位で広がるためsweep経由で
+// 巻き込まれやすい)にまだ飲み込まれている間は、見た目の高さがFULL_CONTENT_PX
+// のまま縮まらない(sweepTimelineWindow/computeTimelineBreakpoints参照)。
+// この関数はその状態を検出する: taskIdが(自分自身は展開していないのに)
+// 今なお見た目上展開されているなら、その巻き込み元タスクのID
+// (=driverTaskId、実際に展開領域を生成している側)を返す。展開されていなければ
+// null。
+function findSweptDriverId(taskId, sortedTasks) {
+  const t = sortedTasks.find(x => x.id === taskId);
+  if (!t) return null;
+  const startMin = toMinutes(t.startTime), endMin = toMinutes(t.endTime);
+  const naturalHeight = (endMin - startMin) * PX_PER_MIN;
+  const breakpoints = computeTimelineBreakpoints(sortedTasks);
+  const top = minuteToY(startMin, breakpoints);
+  const height = minuteToY(endMin, breakpoints) - top;
+  if (height <= naturalHeight + 0.01) return null;
+  const region = breakpoints.find(r => r.ws <= startMin && endMin <= r.we);
+  return region ? region.driverTaskId : null;
+}
 // 高さが1時間ぶん(FULL_CONTENT_PX)以上ならタイトル+時刻/実績+タグ、
 // 未満ならタイトルのみに出し分ける。人工的な最低高さでクランプはしない
 // (隣接する短いタスク同士の見た目が実際の時間関係と矛盾して重なって
@@ -2693,14 +2713,45 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "timeline:toggle-expand": {
-      // data-driver-idを使う(展開中の窓に巻き込まれているだけのタスクを
-      // タップした場合、実際に展開を解除すべきなのは起点のタスクの方で
-      // あり、自分自身のIDをトグルしてもexpandedTimelineTaskIdsに変化が
-      // 起きないため。timelineTaskBoxHtml参照)。
+      // トグル対象(expandedTimelineTaskIdsの操作)はdata-driver-idを使う
+      // (展開中の窓に巻き込まれているだけのタスクをタップした場合、実際に
+      // 展開を解除すべきなのは起点のタスクの方であり、自分自身のIDを
+      // トグルしてもexpandedTimelineTaskIdsに変化が起きないため。
+      // timelineTaskBoxHtml参照)。
+      // 一方、選択対象は必ず実際にタップした箱自身(id)にする(実際に踏んだ
+      // バグ: 独立して展開中の2つのタスクA・Bが隣接している時、Aをタップ
+      // して折りたたむと、Aは自分自身のexpandedTimelineTaskIdsエントリを
+      // 失うが、Bがまだ独立して展開中のためBの窓にAが巻き込まれてしまい、
+      // 見た目上はAが縮小しないまま残る(driverTaskIdがBに切り替わる)。
+      // この状態でもう一度Aをタップすると、今度はdriverTaskId(=B)を
+      // トグル対象に使って正しくA・B両方を折りたためるが、選択もtargetId
+      // (=B)を使っていたため、Aをタップしたはずなのに選択状態がBに
+      // 勝手に移ってしまうという指摘を受けた。ユーザーが実際に指で触れた
+      // 箱を選ぶ方が直感に合うため、選択だけはtargetIdではなくidを使う
+      // ように分離した。
       const targetId = btn.dataset.driverId || id;
-      if (expandedTimelineTaskIds.has(targetId)) expandedTimelineTaskIds.delete(targetId);
-      else expandedTimelineTaskIds.add(targetId);
-      selectTimelineTask(targetId);
+      if (expandedTimelineTaskIds.has(targetId)) {
+        expandedTimelineTaskIds.delete(targetId);
+        // 巻き込みの連鎖的解消。上のコメントの例で言うAを1回タップした
+        // 時点ではまだこのケース(targetId===id===Aで、Aはこの時点で
+        // 自分自身の展開を確かに解除できている)だが、Bがまだ独立して
+        // 展開中のためAはBの窓(clock-hour単位で広がる)に即座に再度
+        // 巻き込まれ、見た目の高さが縮まらないままになる。この状態を
+        // 「タスクAをタップしたのにAが縮まず、しかも(Bの窓の再計算で)
+        // 画面だけ動く」という分かりにくい挙動として指摘された。1回の
+        // タップで実際にタップした箱(id)が見た目上も確実に縮む状態まで
+        // 畳み切ることで、この不整合を解消する。
+        const entry = getSelectedEntry();
+        const sorted = [...entry.tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+        let guard = 0;
+        let sweptDriverId;
+        while ((sweptDriverId = findSweptDriverId(id, sorted)) && guard++ < sorted.length) {
+          expandedTimelineTaskIds.delete(sweptDriverId);
+        }
+      } else {
+        expandedTimelineTaskIds.add(targetId);
+      }
+      selectTimelineTask(id);
       renderTodayView(); // スクロール位置を保ったまま、その場で開閉するだけ
       break;
     }
