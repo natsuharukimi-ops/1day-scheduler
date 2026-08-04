@@ -78,18 +78,32 @@
     height: 100dvh;
     overflow: hidden;
   }
+  /* アプリ全体の常時表示ヘッダー。以前はタイトルバー(.app-header)と
+     日付ナビ+バナー(.today-sticky-header、main内でposition:stickyを
+     使って疑似的に常時表示させていた)の2層構造だったが、「ヘッダ部を
+     もう少しスリムに」という指摘を受けて1層に統合した(renderAppHeader
+     参照)。#appHeader自体がmainの外(#appの直接の子)にあるため、この
+     ヘッダーは常にビューポート上部に固定表示される(position:stickyや
+     mainのpaddingを打ち消す負のマージンといったトリックは不要)。
+     背景は最初var(--bg)(ページ全体と同じ)、次にvar(--bg-elevated)
+     (タスクの箱と同じ)を試したがどちらも「境界が分かりづらい」という
+     指摘が続いた。var(--bg-elevated)はタスクの箱(.timeline-task)や
+     .now-banner自身も使っている色のため、スクロールで箱がヘッダーの
+     すぐ下まで来ると特に見分けが付きにくかった。専用のvar(--header-bg)
+     (タスクの箱の色とは別トーン)にして解決している。 */
   .app-header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; flex-direction: column; gap: 6px;
     padding: 8px 16px; padding-top: calc(8px + env(safe-area-inset-top));
     background: var(--header-bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .app-header h1 { font-size: 18px; margin: 0; display: flex; align-items: center; gap: 8px; }
-  .header-streak { font-size: 14px; color: var(--accent); }
+  .app-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .app-title { font-size: 26px; margin: 0; }
+  .header-streak { font-size: 19px; color: var(--accent); }
   .icon-btn {
-    border: none; background: transparent; font-size: 20px; padding: 8px; line-height: 1;
-    cursor: pointer; border-radius: 10px; min-width: 44px; min-height: 44px;
+    border: none; background: transparent; font-size: 26px; padding: 10px; line-height: 1;
+    cursor: pointer; border-radius: 12px; min-width: 52px; min-height: 52px;
   }
   .icon-btn:active { background: var(--border); }
   .icon-btn.danger { color: var(--danger); }
@@ -113,11 +127,11 @@
     padding-bottom: env(safe-area-inset-bottom); flex-shrink: 0;
   }
   .tab-btn {
-    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
-    padding: 8px 0 10px; border: none; background: transparent; color: var(--tab-inactive);
-    font-size: 11px; cursor: pointer; min-height: 52px;
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 10px 0 12px; border: none; background: transparent; color: var(--tab-inactive);
+    font-size: 14px; cursor: pointer; min-height: 66px;
   }
-  .tab-btn .tab-icon { font-size: 22px; }
+  .tab-btn .tab-icon { font-size: 29px; }
   .tab-btn.active { color: var(--accent); font-weight: 600; }
 
   .view { display: none; }
@@ -128,27 +142,27 @@
      touch-action:noneでページスクロールと競合するドラッグ操作の方が
      反応してしまう)という指摘を受けた。タイムライン列(.timeline-wrap、
      下記)だけ幅に上限を設けて中央寄せにし、左右に常にタスクの箱が存在
-     しない(=スクロール専用の)余白を作る。当初は#todayView全体(日付ナビ・
-     バナーの.today-sticky-headerも含む)を中央寄せしていたが、「固定
+     しない(=スクロール専用の)余白を作る。当初は#todayView全体(当時は
+     日付ナビ・バナーもここに含まれていた)を中央寄せしていたが、「固定
      されているヘッダ部は元の通り広げた方が良い」という指摘を受け、
-     .timeline-wrapだけに絞った(.today-sticky-header自体は`main`の
-     padding分を打ち消す既存の負のマージンにより、以前通り画面幅いっぱいに
-     広がる)。.timeline-add-fab(下記参照)は変わらずこの列幅を前提にした
-     位置合わせをする(タイムライン列の右端に追従させたいのは変わらない
-     ため)。 */
+     .timeline-wrapだけに絞った(日付ナビ・バナーはその後さらに#appHeader
+     へ統合され、mainの外の常時表示ヘッダーの一部になったため、この列幅の
+     影響を受けない画面幅いっぱいの表示は変わらず保たれている)。
+     .timeline-add-fab(下記参照)は変わらずこの列幅を前提にした位置合わせを
+     する(タイムライン列の右端に追従させたいのは変わらないため)。 */
 
   .time-row { display: flex; align-items: center; gap: 8px; }
   .time-row input { flex: 1; min-width: 0; }
 
   .btn {
-    font-size: 15px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border);
-    background: var(--bg-elevated); color: var(--text); cursor: pointer; min-height: 44px;
+    font-size: 18px; padding: 13px 20px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--bg-elevated); color: var(--text); cursor: pointer; min-height: 52px;
   }
   .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
   .btn.danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  .empty-hint { color: var(--text-muted); font-size: 14px; padding: 16px 0; text-align: center; list-style: none; }
+  .empty-hint { color: var(--text-muted); font-size: 17px; padding: 20px 0; text-align: center; list-style: none; }
 
   /* margin-topで先頭(00:00)の時刻ラベル(-8px上にオフセットして表示される)
      のための余白を確保する(以前はヘッダーのすぐ下で見切れていた)。
@@ -158,19 +172,19 @@
      padding-topでは効かず、要素自体を通常フローで押し下げるmargin-topを
      使う必要がある(実際に試してpadding-topでは見切れが直らなかった)。 */
   /* max-width+左右autoで中央寄せにする(--timeline-col-max-width、:root
-     参照)。.today-sticky-header(日付ナビ・バナー)は画面幅いっぱいのまま
-     なので、このタイムライン部分だけが中央の列として収まる形になる。 */
+     参照)。日付ナビ・バナーは#appHeader(画面幅いっぱい)側にあるため、
+     このタイムライン部分だけが中央の列として収まる形になる。 */
   .timeline-wrap { position: relative; margin: 12px auto 24px; max-width: var(--timeline-col-max-width); }
   .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
   .timeline-hour-label {
-    position: absolute; left: 0; top: -8px; font-size: 11px; color: var(--text-muted);
+    position: absolute; left: 0; top: -8px; font-size: 12px; color: var(--text-muted);
     background: var(--bg); padding-right: 4px;
   }
-  .timeline-now-line { position: absolute; left: 44px; right: 0; height: 2px; background: var(--danger); z-index: 5; }
+  .timeline-now-line { position: absolute; left: 48px; right: 0; height: 2px; background: var(--danger); z-index: 5; }
   .timeline-task {
-    position: absolute; left: 48px; right: 8px; overflow: hidden;
+    position: absolute; left: 52px; right: 8px; overflow: hidden;
     background: var(--bg-elevated); border: 1px solid var(--border); border-left: 4px solid var(--accent);
-    border-radius: 8px; padding: 2px 8px; cursor: grab;
+    border-radius: 8px; padding: 2px 10px; cursor: grab;
     touch-action: none; /* ドラッグ操作をブラウザの既定スクロールと競合させない */
   }
   .timeline-task.done { opacity: 0.55; }
@@ -195,7 +209,7 @@
      リサイズできるハイブリッド方式のため)が、見た目を主張するのは
      armed(長押しで選択済み)の時だけにする。 */
   .timeline-resize-handle {
-    position: absolute; left: 26px; right: 62px; cursor: ns-resize; z-index: 3;
+    position: absolute; left: 30px; right: 76px; cursor: ns-resize; z-index: 3;
     display: flex; align-items: center; justify-content: center;
   }
   /* armed中だけ背景色とつまみバーを表示する。選択していない常時ゾーンは
@@ -206,31 +220,31 @@
     background: var(--resize-handle-bg);
   }
   .timeline-resize-handle.armed::after {
-    content: ""; width: 28px; height: 3px; border-radius: 999px; background: var(--accent);
+    content: ""; width: 32px; height: 4px; border-radius: 999px; background: var(--accent);
   }
   .timeline-resize-handle.top { top: 0; border-radius: 7px 7px 0 0; }
   .timeline-resize-handle.bottom { bottom: 0; border-radius: 0 0 7px 7px; }
   .drag-time-tooltip {
     position: fixed; left: 50%; transform: translateX(-50%); z-index: 30;
-    background: var(--text); color: var(--bg); font-size: 13px; font-weight: 600;
-    padding: 4px 10px; border-radius: 8px; pointer-events: none; display: none; white-space: nowrap;
+    background: var(--text); color: var(--bg); font-size: 16px; font-weight: 600;
+    padding: 5px 12px; border-radius: 8px; pointer-events: none; display: none; white-space: nowrap;
   }
   .timeline-check { position: absolute; top: 2px; left: 2px; z-index: 2; }
-  .timeline-check input { width: 18px; height: 18px; }
-  .timeline-task-body { padding-left: 22px; }
-  .timeline-task-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .timeline-task-title.compact { font-size: 12px; }
+  .timeline-check input { width: 22px; height: 22px; }
+  .timeline-task-body { padding-left: 27px; }
+  .timeline-task-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .timeline-task-title.compact { font-size: 13px; }
   .timeline-task-title.done { text-decoration: line-through; color: var(--text-muted); }
-  .timeline-task-meta { font-size: 11px; color: var(--text-muted); }
+  .timeline-task-meta { font-size: 12px; color: var(--text-muted); }
   /* ⏱(集中タブへ)・✏️(編集)を横並びで右上に置く。以前は✏️単体を
      position:absoluteで直接right:0していたが、ボタンが2つになったため
      まとめて配置する共通の親を挟む方式に変えた(▲閉じるボタンは廃止した
      ため、下端リサイズハンドルとの位置調整も不要になった)。 */
-  .timeline-task-actions { position: absolute; top: 0; right: 0; display: flex; gap: 2px; }
-  .timeline-task-action-btn { font-size: 14px; min-width: 28px; min-height: 28px; padding: 4px; }
+  .timeline-task-actions { position: absolute; top: 0; right: 0; display: flex; gap: 3px; }
+  .timeline-task-action-btn { font-size: 16px; min-width: 33px; min-height: 33px; padding: 5px; }
   .timeline-task.expanded { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
   .timeline-expand-hint {
-    position: absolute; bottom: 1px; right: 4px; font-size: 12px; color: var(--text-muted); line-height: 1;
+    position: absolute; bottom: 1px; right: 4px; font-size: 14px; color: var(--text-muted); line-height: 1;
   }
   /* rightはビューポート右端からの距離ではなく、.timeline-wrapの右端
      (--timeline-col-max-width、:root参照)からの距離を狙う。iPadを横向きに
@@ -241,145 +255,128 @@
      20pxのままになるようmax()でフォールバックする。 */
   .timeline-add-fab {
     position: fixed; right: max(20px, calc((100vw - var(--timeline-col-max-width)) / 2 + 20px));
-    bottom: calc(76px + env(safe-area-inset-bottom));
-    width: 52px; height: 52px; border-radius: 50%; border: none; background: var(--accent);
-    color: var(--accent-contrast); font-size: 26px; line-height: 1; cursor: pointer; z-index: 10;
+    bottom: calc(90px + env(safe-area-inset-bottom));
+    width: 64px; height: 64px; border-radius: 50%; border: none; background: var(--accent);
+    color: var(--accent-contrast); font-size: 32px; line-height: 1; cursor: pointer; z-index: 10;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
 
-  .focus-select-row { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .focus-select-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
   .focus-task-detail {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 12px; margin-bottom: 16px;
+    padding: 16px; margin-bottom: 20px;
   }
-  .focus-task-detail-title { font-size: 16px; font-weight: 600; }
+  .focus-task-detail-title { font-size: 20px; font-weight: 600; }
   .focus-task-detail-title.done { text-decoration: line-through; color: var(--text-muted); }
-  .focus-task-detail-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .focus-task-detail-meta { font-size: 16px; color: var(--text-muted); margin-top: 6px; }
   .focus-select-row select {
-    flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    flex: 1; min-width: 0; font-size: 19px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--border);
     background: var(--bg-elevated); color: var(--text);
   }
   .timer-card {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 32px 16px; text-align: center;
+    padding: 40px 20px; text-align: center;
   }
-  .timer-phase { font-size: 15px; color: var(--text-muted); margin-bottom: 8px; }
-  .timer-display { font-size: 56px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
-  .timer-progress { font-size: 14px; color: var(--text-muted); margin-top: 8px; }
-  .timer-controls { display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
-  .timer-hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+  .timer-phase { font-size: 18px; color: var(--text-muted); margin-bottom: 10px; }
+  .timer-display { font-size: 72px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
+  .timer-progress { font-size: 17px; color: var(--text-muted); margin-top: 10px; }
+  .timer-controls { display: flex; gap: 16px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+  .timer-hint { font-size: 14px; color: var(--text-muted); margin-top: 14px; }
 
-  .streak-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .streak-row { display: flex; gap: 10px; margin-bottom: 20px; }
   .streak-box {
     flex: 1; background: var(--bg-elevated); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 14px 8px; text-align: center;
+    border-radius: var(--radius); padding: 18px 10px; text-align: center;
   }
-  .streak-value { font-size: 24px; font-weight: 700; color: var(--accent); }
-  .streak-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .streak-value { font-size: 30px; font-weight: 700; color: var(--accent); }
+  .streak-label { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
 
   .today-table {
-    width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;
+    width: 100%; border-collapse: collapse; font-size: 15px; margin-bottom: 24px;
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
   }
-  .today-table th, .today-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
-  .today-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+  .today-table th, .today-table td { padding: 11px 13px; text-align: left; border-bottom: 1px solid var(--border); }
+  .today-table th { color: var(--text-muted); font-weight: 600; font-size: 14px; }
 
-  .heatmap-title { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
-  .heatmap-grid { display: grid; grid-template-columns: repeat(7, 20px); grid-auto-rows: 20px; gap: 4px; }
-  .heat-cell { width: 20px; height: 20px; border-radius: 4px; cursor: pointer; }
+  .heatmap-title { font-size: 15px; color: var(--text-muted); margin-bottom: 10px; }
+  .heatmap-grid { display: grid; grid-template-columns: repeat(7, 26px); grid-auto-rows: 26px; gap: 5px; }
+  .heat-cell { width: 26px; height: 26px; border-radius: 5px; cursor: pointer; }
   .heat-cell.level-0 { background: var(--heat-0); }
   .heat-cell.level-1 { background: var(--heat-1); }
   .heat-cell.level-2 { background: var(--heat-2); }
   .heat-cell.level-3 { background: var(--heat-3); }
   .heat-cell.level-4 { background: var(--heat-4); }
-  .heatmap-detail { font-size: 13px; color: var(--text-muted); margin-top: 8px; min-height: 18px; }
+  .heatmap-detail { font-size: 15px; color: var(--text-muted); margin-top: 10px; min-height: 20px; }
 
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 20px; }
   .modal.hidden { display: none; }
   .modal-card {
-    background: var(--bg-elevated); width: 100%; max-width: 480px; border-radius: 16px;
-    padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); max-height: 80vh; overflow-y: auto;
+    background: var(--bg-elevated); width: 100%; max-width: 560px; border-radius: 18px;
+    padding: 20px; padding-bottom: max(20px, env(safe-area-inset-bottom)); max-height: 80vh; overflow-y: auto;
   }
-  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .modal-header h2 { margin: 0; font-size: 17px; }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+  .modal-header h2 { margin: 0; font-size: 21px; }
   .modal-close-btn {
-    background: var(--border); font-size: 22px; min-width: 40px; min-height: 40px; border-radius: 50%;
+    background: var(--border); font-size: 26px; min-width: 48px; min-height: 48px; border-radius: 50%;
   }
-  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 14px; color: var(--text-muted); }
+  .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 17px; font-size: 16px; color: var(--text-muted); }
   .field input[type="number"], .field input[type="text"], .field select {
-    font-size: 16px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    font-size: 18px; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border);
     background: var(--bg); color: var(--text);
   }
-  .field input[type="file"] { font-size: 14px; }
+  .field input[type="file"] { font-size: 16px; }
   .field input:disabled { opacity: 0.55; }
-  hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 
-  .header-actions { display: flex; gap: 2px; }
+  .header-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
 
-  .chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 8px; -webkit-overflow-scrolling: touch; }
+  .chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; -webkit-overflow-scrolling: touch; }
   .chip {
-    flex-shrink: 0; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
-    background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;
+    flex-shrink: 0; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 15px; cursor: pointer; white-space: nowrap;
   }
   .chip.selected { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
-  .chip.static { cursor: default; font-size: 11px; padding: 3px 9px; }
-  .chip-hint { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .task-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; margin-bottom: 3px; }
+  /* タイムラインの箱(タイムラインの1時間あたりの高さは指摘を受けて据え置いた
+     ため、箱の高さ自体は変わっていない)にも使うため、他のチップほど大きく
+     できない(実測で.timeline-taskの高さに収まる上限を確認して決めた値)。 */
+  .chip.static { cursor: default; font-size: 11px; padding: 2px 8px; }
+  .chip-hint { font-size: 15px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .task-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; margin-bottom: 3px; }
 
-  .date-nav { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
-  .date-nav .date-label { flex: 1; text-align: center; font-size: 15px; color: var(--text-muted); }
-  .date-nav .today-jump { font-size: 12px; color: var(--accent); background: transparent; border: none; cursor: pointer; padding: 6px; }
+  .date-nav { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; }
+  .date-nav .date-label { flex: 1; text-align: center; font-size: 19px; color: var(--text-muted); }
+  .date-nav .today-jump { font-size: 15px; color: var(--accent); background: transparent; border: none; cursor: pointer; padding: 8px; }
   .date-nav-btn {
     background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);
-    border-radius: 50%; font-size: 15px;
+    border-radius: 50%; font-size: 19px;
   }
   .date-nav-btn:active { background: var(--border); }
   .date-nav .today-jump:disabled { opacity: 0.35; cursor: default; }
 
   .now-banner {
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 8px 12px; margin-bottom: 8px; font-size: 14px;
+    padding: 10px 14px; font-size: 17px;
   }
   .now-banner.active { border-left: 4px solid var(--accent); cursor: pointer; }
 
-  /* mainのpadding(16px)ぶんを負のマージンで打ち消し、position:stickyが
-     ビューポート最上端(main内)にぴったり付くようにする。自身にpaddingを
-     足して見た目上の余白は復元する(marginは-16pxのままmainのpaddingと
-     一致させる必要があるが、paddingは見た目の詰まり具合を決めるだけなので
-     独立して小さくできる。「もう少しスマートに」という指摘を受けて
-     上下方向を詰めた)。背景は最初var(--bg)(ページ全体と同じ)、次に
-     var(--bg-elevated)(タスクの箱と同じ)を試したがどちらも「境界が
-     分かりづらい」という指摘が続いた。var(--bg-elevated)はタスクの箱
-     (.timeline-task)や.now-banner自身も使っている色のため、スクロールで
-     箱がヘッダーのすぐ下まで来ると特に見分けが付きにくかった。専用の
-     var(--header-bg)(タスクの箱の色とは別トーン)に変え、.app-headerと
-     揃えることでヘッダー全体(タイトルバー+日付ナビ+バナー)を一続きの
-     「浮いている面」として見せている。 */
-  .today-sticky-header {
-    position: sticky; top: -16px; z-index: 15;
-    margin: -16px -16px 0; padding: 10px 16px 6px;
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
-  .calendar-weekday { text-align: center; font-size: 11px; color: var(--text-muted); }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; }
+  .calendar-weekday { text-align: center; font-size: 13px; color: var(--text-muted); }
   .calendar-cell {
     position: relative; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
-    border-radius: 10px; font-size: 14px; cursor: pointer; background: var(--bg);
+    border-radius: 12px; font-size: 17px; cursor: pointer; background: var(--bg);
   }
   .calendar-cell.empty { visibility: hidden; cursor: default; }
   .calendar-cell.is-today { box-shadow: inset 0 0 0 2px var(--accent); }
   .calendar-cell.is-selected { background: var(--accent); color: var(--accent-contrast); }
   .calendar-cell.has-tasks::after {
-    content: ""; position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 50%;
+    content: ""; position: absolute; bottom: 5px; width: 5px; height: 5px; border-radius: 50%;
     background: var(--accent);
   }
   .calendar-cell.is-selected.has-tasks::after { background: var(--accent-contrast); }
   .calendar-nav { display: flex; align-items: center; justify-content: space-between; }
-  .calendar-nav .month-label { font-size: 15px; font-weight: 600; }
+  .calendar-nav .month-label { font-size: 18px; font-weight: 600; }
 
-  .tag-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 14px; gap: 8px; }
+  .tag-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 5px; border-bottom: 1px solid var(--border); font-size: 16px; gap: 10px; }
   .tag-row:last-child { border-bottom: none; }
   .tag-tree-prefix {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -387,30 +384,22 @@
   }
   .tag-virtual-label { color: var(--text-muted); font-style: italic; }
   .tag-stale-badge {
-    font-size: 11px; color: var(--text-muted); margin-left: 6px; font-weight: normal;
-    background: var(--border); border-radius: 999px; padding: 2px 7px; white-space: nowrap;
+    font-size: 13px; color: var(--text-muted); margin-left: 7px; font-weight: normal;
+    background: var(--border); border-radius: 999px; padding: 3px 8px; white-space: nowrap;
   }
-  .tag-agg-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .tag-agg-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 5px; font-size: 15px; border-bottom: 1px solid var(--border); }
   .tag-agg-row:last-child { border-bottom: none; }
 
-  .archive-note { font-size: 12px; color: var(--text-muted); margin-top: 10px; text-align: center; }
+  .archive-note { font-size: 14px; color: var(--text-muted); margin-top: 12px; text-align: center; }
   .all-time-row {
-    font-size: 13px; color: var(--text-muted); text-align: center; padding: 10px;
+    font-size: 15px; color: var(--text-muted); text-align: center; padding: 12px;
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
   }
 </style>
 </head>
 <body>
 <div id="app">
-  <header class="app-header">
-    <h1>1day scheduler <span id="headerStreak" class="header-streak"></span></h1>
-    <div class="header-actions">
-      <button class="icon-btn glyph-icon-btn" id="undoBtn" data-action="task:undo" aria-label="元に戻す">↶</button>
-      <button class="icon-btn glyph-icon-btn" id="redoBtn" data-action="task:redo" aria-label="やり直す">↷</button>
-      <button class="icon-btn" data-action="tags:open" aria-label="タグ管理">🏷️</button>
-      <button class="icon-btn" data-action="settings-open" aria-label="設定">⚙️</button>
-    </div>
-  </header>
+  <header class="app-header" id="appHeader"></header>
 
   <main>
     <section class="view active" data-view="today" id="todayView"></section>
@@ -556,13 +545,15 @@ const DEFAULT_NEW_TASK_MINUTES = 60; // 新規タスク作成時の既定所要�
 // してから大きなハンドルでリサイズする」を主経路にし、選択していない
 // (armedでない)箱にも控えめな常時ゾーンを残すハイブリッド方式にした
 // (マウス/トラックパッドでの直接ドラッグや、慣れたユーザーの近道として
-// 機能する)。DRAG_EDGE_ZONE_PXはarmed状態用の値(12px、上記の狭めてきた
-// 経緯の最初の値に戻した)。
-const DRAG_EDGE_ZONE_PX = 12;
-// armed(選択+長押し)でない箱の常時ゾーン。以前の6pxと同じ値・同じ
-// トレードオフ(誤って移動になりやすい)を持つが、armed状態というより
-// 確実な代替手段が常にあるため許容する。
-const PASSIVE_DRAG_EDGE_ZONE_PX = 6;
+// 機能する)。DRAG_EDGE_ZONE_PXはarmed状態用の値。「UIパーツをもう少し
+// 大きくしたい」という指摘を受け12px→15pxに引き上げた(タイムラインの
+// 1時間あたりの高さ(PX_PER_MIN)自体は指摘を受けて据え置いているため、
+// 短いタスクほどこのゾーンを確保する余地が狭くなる。MIN_RESIZE_BOX_PXが
+// 連動して大きくなる分、armedでリサイズできる最短の所要時間もわずかに
+// 伸びるが、その場合も編集画面からの直接入力で代替できる)。
+const DRAG_EDGE_ZONE_PX = 15;
+// armed(選択+長押し)でない箱の常時ゾーン。同じ理由で6px→8pxに引き上げた。
+const PASSIVE_DRAG_EDGE_ZONE_PX = 8;
 // 上端+下端のつかみ判定領域(ゾーン幅×2)に加えて、移動用に最低限の余白
 // (12px)を残せる高さが無いと、短い箱では上下のリサイズ判定が重なり合い
 // 移動の判定領域が消えてしまう(実際に指摘を受けたバグ)。この高さ未満の
@@ -1284,18 +1275,76 @@ function computeNowStatus(dayEntry) {
 }
 
 function renderAll() {
-  renderHeaderStreak();
+  renderAppHeader();
   if (currentView === "today") renderTodayView();
   if (currentView === "focus") renderFocusView();
   if (currentView === "stats") renderStatsView();
 }
-function renderHeaderStreak() {
-  const el = document.getElementById("headerStreak");
-  if (el) el.textContent = state.streak.current > 0 ? `🔥${state.streak.current}` : "";
+// アプリ全体で常に表示されるヘッダー(タブを切り替えてもスクロールしても
+// 消えない)。以前は.app-header(タイトル+アイコン)と.today-sticky-header
+// (日付ナビ+バナー、mainの中でposition:stickyを使って疑似的に常時表示
+// させていた)の2層構造だったが、「ヘッダ部をもう少しスリムに」という
+// 指摘を受けて1層に統合した。予定/集中タブでは日付ナビをここに表示し
+// (アプリ名の固定テキストより実用上ずっと使う頻度が高いため、タイトルの
+// 代わりに表示する)、実績タブ(日付ナビが無関係)ではタイトルを表示する。
+// #appHeader自体はmainの外(#appの直接の子)にあるため、position:sticky+
+// mainのpaddingを打ち消す負のマージン、というトリックが丸ごと不要になった
+// (以前はmain内の要素をmain最上部に固定して見せる必要があったが、今は
+// ヘッダー自体がスクロールと無関係な場所にあるため)。
+function renderAppHeader() {
+  const el = document.getElementById("appHeader");
+  if (!el) return;
+  const streakHtml = state.streak.current > 0 ? `<span class="header-streak">🔥${state.streak.current}</span>` : "";
+  const showDateNav = currentView === "today" || currentView === "focus";
+  const leftHtml = showDateNav
+    ? renderHeaderDateNavHtml()
+    : `<h1 class="app-title">1day scheduler ${streakHtml}</h1>`;
+  el.innerHTML = `
+    <div class="app-header-row">
+      ${leftHtml}
+      <div class="header-actions">
+        ${showDateNav ? streakHtml : ""}
+        <button class="icon-btn glyph-icon-btn" id="undoBtn" data-action="task:undo" aria-label="元に戻す">↶</button>
+        <button class="icon-btn glyph-icon-btn" id="redoBtn" data-action="task:redo" aria-label="やり直す">↷</button>
+        <button class="icon-btn" data-action="tags:open" aria-label="タグ管理">🏷️</button>
+        <button class="icon-btn" data-action="settings-open" aria-label="設定">⚙️</button>
+      </div>
+    </div>
+    ${currentView === "today" ? `<div id="nowBanner"></div>` : ""}
+  `;
   renderUndoRedoButtons();
+  if (currentView === "today") renderNowBanner();
+}
+// ボタンの並び・位置が日付によってガタつかないよう、その日は使わない
+// ボタンも常に同じ位置に置いたままdisabledにする(消してしまうと、隣の
+// ボタンの位置が日付ごとにずれて誤タップしやすくなるため)。予定タブ・
+// 集中タブで共用する(▾/▴(短いタスクの全展開/全折りたたみ)はタイムライン
+// 固有の機能のため、予定タブ(currentView==="today")の時だけ出す)。
+function renderHeaderDateNavHtml() {
+  const d = dayKeyToDate(selectedDate);
+  const isToday = selectedDate === todayKey();
+  let toggleAllBtn = "";
+  if (currentView === "today") {
+    const compactIds = getSelectedEntry().tasks
+      .filter(t => (toMinutes(t.endTime) - toMinutes(t.startTime)) * PX_PER_MIN < FULL_CONTENT_PX)
+      .map(t => t.id);
+    const hasCompact = compactIds.length > 0;
+    const allExpanded = hasCompact && compactIds.every(cid => expandedTimelineTaskIds.has(cid));
+    toggleAllBtn = `<button class="icon-btn date-nav-btn" data-action="timeline:toggle-expand-all"
+      aria-label="${allExpanded ? "短いタスクを全て折りたたむ" : "短いタスクを全て展開する"}" ${hasCompact ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
+  }
+  return `
+    <div class="date-nav">
+      <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日">◀</button>
+      <span class="date-label">${formatJapaneseDate(d)}</span>
+      <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日">▶</button>
+      <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー">📅</button>
+      <button class="today-jump" data-action="date:today" aria-label="今日に戻る" ${isToday ? "disabled" : ""}>今日</button>
+      ${toggleAllBtn}
+    </div>`;
 }
 // タスクの追加・編集・削除・チェック・ドラッグ移動のいずれかが起きた
-// 直後は必ずrenderHeaderStreak()も呼ばれる(既存の各ハンドラの慣習)ため、
+// 直後は必ずrenderAppHeader()も呼ばれる(既存の各ハンドラの慣習)ため、
 // そこに相乗りしてボタンの有効/無効を最新化する。専用の再描画呼び出しを
 // 各所に追加する必要が無い。
 function renderUndoRedoButtons() {
@@ -1576,29 +1625,6 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
       ${resizeHandles}
     </div>`;
 }
-// ボタンの並び・位置が日付によってガタつかないよう、その日は使わない
-// ボタンも常に同じ位置に置いたままdisabledにする(消してしまうと、
-// 隣のボタンの位置が日付ごとにずれて誤タップしやすくなるため)。
-function renderDateNavHtml() {
-  const [y, m, dNum] = selectedDate.split("-").map(Number);
-  const d = new Date(y, m - 1, dNum);
-  const isToday = selectedDate === todayKey();
-  const compactIds = getSelectedEntry().tasks
-    .filter(t => (toMinutes(t.endTime) - toMinutes(t.startTime)) * PX_PER_MIN < FULL_CONTENT_PX)
-    .map(t => t.id);
-  const hasCompact = compactIds.length > 0;
-  const allExpanded = hasCompact && compactIds.every(cid => expandedTimelineTaskIds.has(cid));
-  return `
-    <div class="date-nav">
-      <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日">◀</button>
-      <span class="date-label">${formatJapaneseDate(d)}</span>
-      <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日">▶</button>
-      <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー">📅</button>
-      <button class="today-jump" data-action="date:today" aria-label="今日に戻る" ${isToday ? "disabled" : ""}>今日</button>
-      <button class="icon-btn date-nav-btn" data-action="timeline:toggle-expand-all"
-        aria-label="${allExpanded ? "短いタスクを全て折りたたむ" : "短いタスクを全て展開する"}" ${hasCompact ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>
-    </div>`;
-}
 function renderTitleHistoryHtml() {
   const suggestions = getTitleSuggestions(state);
   if (!suggestions.length) return "";
@@ -1731,14 +1757,11 @@ function renderTodayView({ autoscroll = false } = {}) {
   const container = document.getElementById("todayView");
   const entry = getSelectedEntry();
   container.innerHTML = `
-    <div class="today-sticky-header">
-      ${renderDateNavHtml()}
-      <div id="nowBanner"></div>
-    </div>
     ${renderTimelineHtml(entry)}
     <button class="timeline-add-fab" data-action="task:add-open" aria-label="タスクを追加">＋</button>
   `;
-  renderNowBanner();
+  // 日付ナビ・▾/▴・バナーはヘッダーに統合済み(renderAppHeader参照)。
+  renderAppHeader();
   if (autoscroll) scrollTimelineToRelevantPosition(entry);
 }
 function scrollTimelineToRelevantPosition(entry) {
@@ -1750,9 +1773,13 @@ function scrollTimelineToRelevantPosition(entry) {
     const sorted = [...entry.tasks].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
     if (sorted.length) target = document.querySelector(`.timeline-task[data-id="${sorted[0].id}"]`);
   }
+  // ヘッダーはmainの外(#appの直接の子)にあり常時表示されているため、
+  // main自身のスクロール可能領域の上端が既にヘッダーの下から始まっている。
+  // そのためヘッダーの高さぶんの追加クリアランスは不要で、見た目の余白
+  // (16px)だけを確保すればよい(以前はヘッダーの一部(日付ナビ・バナー)が
+  // main内のposition:stickyだったため、その高さを実測して足す必要があった)。
+  const clearance = 16;
   if (target) {
-    const stickyHeader = document.querySelector(".today-sticky-header");
-    const clearance = (stickyHeader ? stickyHeader.getBoundingClientRect().height : 0) + 16;
     const targetTop = target.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
     main.scrollTop = Math.max(0, targetTop - clearance);
   } else {
@@ -1845,7 +1872,7 @@ function saveTaskEditFromForm() {
     closeTaskEditModal();
     if (currentView === "today") renderTodayView();
     if (currentView === "focus") renderFocusView();
-    renderHeaderStreak();
+    renderAppHeader();
   } catch (err) {
     discardPendingUndoSnapshot();
     alert(err.message);
@@ -1870,42 +1897,17 @@ function deleteFromTaskModal() {
   closeTaskEditModal();
   if (currentView === "today") renderTodayView();
   if (currentView === "focus") renderFocusView();
-  renderHeaderStreak();
+  renderAppHeader();
 }
 
-// 集中タブ専用の日付ナビ。予定タブのrenderDateNavHtml()とほぼ同じ見た目だが、
-// ▾/▴(短いタスクの全展開/全折りたたみ)は予定タブのタイムライン固有の
-// 機能のためここには含めない。selectedDateを共用しているため、date:prev
-// 等のアクション自体は予定タブと共通のハンドラで処理される。
-// .today-sticky-header(予定タブの日付ナビ・バナーと同じクラス)で包む
-// 理由: 予定タブに合わせて日付ナビを追加したのに背景色だけページ地の色
-// (var(--bg))のままだと、見た目上「予定タブのヘッダー」と「集中タブの
-// この部分」が同じ役割なのに違う見た目になってしまうという指摘を受けた。
-// クラスを共用することで色(var(--header-bg))だけでなく、mainのpaddingを
-// 打ち消して画面幅いっぱいに広げる負のマージン・position:stickyも
-// 揃って手に入る(集中タブの内容は通常短く、実際にスクロールしてsticky
-// 効果が見えることは少ないが、揃えておいて損はない)。
-function renderFocusDateNavHtml() {
-  const d = dayKeyToDate(selectedDate);
-  const isToday = selectedDate === todayKey();
-  return `
-    <div class="today-sticky-header">
-      <div class="date-nav">
-        <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日">◀</button>
-        <span class="date-label">${formatJapaneseDate(d)}</span>
-        <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日">▶</button>
-        <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー">📅</button>
-        <button class="today-jump" data-action="date:today" aria-label="今日に戻る" ${isToday ? "disabled" : ""}>今日</button>
-      </div>
-    </div>`;
-}
 // 集中タブは予定タブとselectedDateを共用し、他日のタスクも選んで実行できる
 // (壁時計は常に「今」進むため、タイマー自体の挙動はどの日を見ていても
 // 変わらない。streak・「今: ◯◯」バナーだけは引き続きtodayKey()固定で、
-// このタブの日付ナビとは独立している)。
-// resetScroll:trueはタブ切り替え・日付ナビ操作の時だけ指定する(新しい
-// 日付ナビが箱の先頭に増えたことで、予定タブ側でスクロールしたままこの
-// タブに来ると日付ナビが画面外に隠れる問題があった。予定タブの
+// このタブの日付ナビとは独立している)。日付ナビ自体はヘッダーに統合済み
+// (renderAppHeader参照)なので、ここでは表示しない。
+// resetScroll:trueはタブ切り替え・日付ナビ操作の時だけ指定する(予定タブ
+// 側で長くスクロールしたまま集中タブに来ると、集中タブの短いコンテンツが
+// スクロール位置の関係で見えなくなることがあるため)。予定タブの
 // renderTodayView({autoscroll})と同じ考え方で、「新しい文脈に入る」
 // タイミングだけ#focusViewの先頭が見えるようmainのスクロール位置を
 // リセットする。それ以外の再描画(一時停止/再開等)ではその場の見た目を
@@ -1980,7 +1982,6 @@ function renderFocusView({ resetScroll = false } = {}) {
   // ことを防ぐ)。
   const selectDisabled = !!(session && (!session.paused || sessionTaskOtherDay));
   container.innerHTML = `
-    ${renderFocusDateNavHtml()}
     <div class="focus-select-row">
       <select id="focusTaskSelect" ${selectDisabled ? "disabled" : ""}>
         ${optionSourceTasks.length ? options : '<option value="">タスクがありません</option>'}
@@ -1993,6 +1994,8 @@ function renderFocusView({ resetScroll = false } = {}) {
     ${renderFocusTaskDetailHtml(selectedTask)}
     <div class="timer-card">${timerHtml}</div>
   `;
+  // 日付ナビはヘッダーに統合済み(renderAppHeader参照)。
+  renderAppHeader();
   if (resetScroll) {
     const main = document.querySelector("main");
     if (main) main.scrollTop = 0;
@@ -2113,7 +2116,7 @@ function switchView(view) {
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.dataset.view === view));
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === view));
   currentView = view;
-  renderHeaderStreak();
+  renderAppHeader();
   if (view === "today") renderTodayView({ autoscroll: true });
   if (view === "focus") renderFocusView({ resetScroll: true });
   if (view === "stats") renderStatsView();
@@ -2469,8 +2472,11 @@ function autoScrollTick() {
   if (!dragState || !dragState.moved) { autoScrollRAF = null; return; }
   const main = document.querySelector("main");
   if (main) {
-    const stickyHeader = document.querySelector(".today-sticky-header");
-    const topBound = stickyHeader ? stickyHeader.getBoundingClientRect().bottom : 0;
+    // ヘッダー(#appHeader)はmainの外(#appの直接の子)にあり常時表示
+    // されているため、main自身の上端がそのままスクロール可能領域の
+    // 上端になる(以前はヘッダーの一部がmain内のposition:stickyだった
+    // ため、その下端を実測して使う必要があった)。
+    const topBound = main.getBoundingClientRect().top;
     const tabbar = document.querySelector(".tabbar");
     const bottomBound = window.innerHeight - (tabbar ? tabbar.getBoundingClientRect().height : 0);
     const y = dragState.lastClientY;
@@ -2564,7 +2570,7 @@ function timelinePointerUp(e) {
   }
   saveState(state);
   renderTodayView();
-  renderHeaderStreak();
+  renderAppHeader();
 }
 function timelinePointerCancel(e) {
   if (!dragState || e.pointerId !== dragState.pointerId) return;
@@ -2818,7 +2824,7 @@ document.addEventListener("click", (e) => {
         focusSelectedTaskId = null;
         saveState(state);
         renderFocusView();
-        renderHeaderStreak();
+        renderAppHeader();
       }
       break;
     }
@@ -2887,7 +2893,7 @@ let state = loadState();
   if (rollover.rolled && selectedDate === rollover.prevDay) selectedDate = rollover.today;
 }
 document.addEventListener("DOMContentLoaded", () => {
-  renderHeaderStreak();
+  renderAppHeader();
   renderTodayView({ autoscroll: true }); // 起動時は必ず「今日」表示なので初回だけ自動スクロールする
   if (state.activeSession) ensureTickTimer();
   setInterval(() => { if (currentView === "today") renderNowBanner(); }, 30000);
