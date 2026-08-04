@@ -252,12 +252,21 @@
      ままだとFABだけタイムライン列から離れた画面端に取り残されて見える。
      100vwが列の右端を超えている(=中央寄せの余白が生まれている)分だけ
      right側のオフセットを足し、余白が無い(列が画面幅いっぱいの)時は
-     20pxのままになるようmax()でフォールバックする。 */
+     20pxのままになるようmax()でフォールバックする。
+     以前はこの計算がmainのpadding(左右16pxずつ、下記main参照)を差し引か
+     ずに.timeline-wrapの実際のmargin:autoと食い違っていたため、横向きで
+     余白があるはずの場面でもFABがタイムライン列に食い込んで重なって
+     しまう不具合があった(実際に踏んだ、「タイムラインに重ねないで余白
+     部分に配置してほしい」という指摘で発覚)。オフセットを「FAB自身の幅+
+     列との間の余白ぶん(68px)」に引き直し、mainのpadding分を安全マージン
+     として残したまま列の右端より確実に内側(画面端寄り)に収まるように
+     した。余白が無い/狭い(ポートレート等)場合は重なりを避けようがない
+     ため、その場合だけ以前と同じ画面端から20pxのfallbackになる。 */
   .timeline-add-fab {
-    position: fixed; right: max(20px, calc((100vw - var(--timeline-col-max-width)) / 2 + 20px));
+    position: fixed; right: max(20px, calc((100vw - 32px - var(--timeline-col-max-width)) / 2 - 68px));
     bottom: calc(90px + env(safe-area-inset-bottom));
-    width: 64px; height: 64px; border-radius: 50%; border: none; background: var(--accent);
-    color: var(--accent-contrast); font-size: 32px; line-height: 1; cursor: pointer; z-index: 10;
+    width: 56px; height: 56px; border-radius: 50%; border: none; background: var(--accent);
+    color: var(--accent-contrast); font-size: 28px; line-height: 1; cursor: pointer; z-index: 10;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
 
@@ -277,7 +286,7 @@
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 40px 20px; text-align: center;
   }
-  .timer-phase { font-size: 18px; color: var(--text-muted); margin-bottom: 10px; }
+  .timer-phase { font-size: 18px; color: var(--text-muted); margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .timer-display { font-size: 72px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
   .timer-progress { font-size: 17px; color: var(--text-muted); margin-top: 10px; }
   .timer-controls { display: flex; gap: 16px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
@@ -299,6 +308,11 @@
   .today-table th { color: var(--text-muted); font-weight: 600; font-size: 14px; }
 
   .heatmap-title { font-size: 15px; color: var(--text-muted); margin-bottom: 10px; }
+  /* WBS別集計の見出し行(タイトル+全展開/全折りたたみボタン)。ボタンと
+     並べるためheatmap-titleの単独margin-bottomをこちら側に持たせ替える
+     (row内で子だけが下マージンを持つと縦位置がズレるため)。 */
+  .wbs-agg-header-row { margin-bottom: 10px; }
+  .wbs-agg-header-row .heatmap-title { margin-bottom: 0; }
   .heatmap-grid { display: grid; grid-template-columns: repeat(7, 26px); grid-auto-rows: 26px; gap: 5px; }
   .heat-cell { width: 26px; height: 26px; border-radius: 5px; cursor: pointer; }
   .heat-cell.level-0 { background: var(--heat-0); }
@@ -341,7 +355,7 @@
      できない(実測で.timeline-taskの高さに収まる上限を確認して決めた値)。 */
   .chip.static { cursor: default; font-size: 11px; padding: 2px 8px; }
   .chip-hint { font-size: 15px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .task-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; margin-bottom: 3px; }
+  .task-memo { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
 
   .date-nav { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
   .date-nav .date-label { flex: 1; text-align: center; font-size: 16px; color: var(--text-muted); }
@@ -376,19 +390,95 @@
   .calendar-nav { display: flex; align-items: center; justify-content: space-between; }
   .calendar-nav .month-label { font-size: 18px; font-weight: 600; }
 
-  .tag-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 5px; border-bottom: 1px solid var(--border); font-size: 16px; gap: 10px; }
-  .tag-row:last-child { border-bottom: none; }
-  .tag-tree-prefix {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    color: var(--text-muted); white-space: pre;
+  .wbs-row {
+    position: relative; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 5px; font-size: 16px; gap: 10px;
   }
-  .tag-virtual-label { color: var(--text-muted); font-style: italic; }
-  .tag-stale-badge {
-    font-size: 13px; color: var(--text-muted); margin-left: 7px; font-weight: normal;
-    background: var(--border); border-radius: 999px; padding: 3px 8px; white-space: nowrap;
+  /* 横の区切り線は、ガイド線を使うツリー表示(WBS管理モーダル)では
+     ツリーの縦線と交差して邪魔になる、という指摘を受けてやめた。フラットな
+     一覧(タスク編集モーダルの検索候補、.pickable)には引き続き区切り線を
+     残す(ガイド線が無く、行の境目が分かりにくくなるため)。 */
+  .wbs-row.pickable { cursor: pointer; border-bottom: 1px solid var(--border); }
+  .wbs-row.pickable:last-child { border-bottom: none; }
+  .wbs-row.pickable.selected { background: var(--accent); color: var(--accent-contrast); border-radius: 10px; }
+  /* 階層のガイド線。.wbs-row(position:relative)の直接の子として絶対配置し、
+     行自体を基準にする(隣接する行の線が継ぎ目なく繋がって見えるようにする
+     ため)。.wbs-guide-lineは祖先の継続線(後続の兄弟がまだいる階層だけ)、
+     .wbs-guide-branch-*は自分から親への枝で、上半分+横スタブは兄弟内の
+     位置に関わらず常に描画し、下半分だけ最後の子でない場合に描画する
+     (これにより、並び替えで最後の子になっても自分の枝自体は消えない)。
+     色はvar(--border)だと薄すぎて頼りない見た目になるという指摘を受け、
+     もう少し主張のあるvar(--text-muted)にしている。 */
+  .wbs-guide-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--text-muted); }
+  .wbs-guide-branch-top { position: absolute; top: 0; height: 50%; width: 1px; background: var(--text-muted); }
+  .wbs-guide-branch-bottom { position: absolute; top: 50%; bottom: 0; width: 1px; background: var(--text-muted); }
+  .wbs-guide-branch-h { position: absolute; top: 50%; height: 1px; background: var(--text-muted); }
+  .wbs-deleted-label { color: var(--text-muted); font-style: italic; }
+  /* 名前が長くなってもボタン(✏️🗑等)や数値が押し出されないよう、名前側は
+     常にこの共通クラスで1行省略にする(WBS管理モーダル・実績集計の行の
+     両方で使う)。.stackedは検索候補のように名前+パンくずを2行で積む場合。
+     どちらもflex:1;min-width:0を親から受け取り、実際の省略は
+     .wbs-row-name/.wbs-row-pathそれぞれが自分の1行分だけを担当する。 */
+  .wbs-row-label { flex: 1; min-width: 0; display: flex; align-items: center; }
+  .wbs-row-label.stacked { flex-direction: column; align-items: stretch; }
+  .wbs-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 実績タブのWBS別集計における合成「その他」行(=そのノードに直接
+     割り当てられたタスク分。state.wbsには存在しない表示専用ノード)。 */
+  .wbs-agg-other-label { font-style: italic; color: var(--text-muted); }
+  .wbs-row-actions, .wbs-row-value { flex-shrink: 0; }
+  /* 兄弟内の並び替え用ドラッグハンドル。タップ領域確保のため.icon-btnを
+     流用しつつ、ページ/モーダルのスクロールと競合しないようtouch-action:
+     noneを指定する(.timeline-taskと同じ理由)。cursor:grab/grabbingで
+     マウス操作時も掴んでいる感を出す。 */
+  .wbs-drag-handle {
+    display: inline-flex; align-items: center; justify-content: center;
+    touch-action: none; cursor: grab; user-select: none;
   }
-  .tag-agg-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 5px; font-size: 15px; border-bottom: 1px solid var(--border); }
-  .tag-agg-row:last-child { border-bottom: none; }
+  .wbs-drag-handle:active { cursor: grabbing; }
+  /* 折りたたみトグル。子を持たないノードにも同じ幅の空スロット
+     (.wbs-toggle-slotのみ)を確保し、子の有無によらず名前の開始位置を
+     揃える(ファイルツリーでファイル行にだけ空チェブロン分の余白がある
+     のと同じ考え方)。▶▼は絵文字ではない記号グリフのため、他の記号
+     アイコン(◀▶等)と同じく.glyph-icon-btn(背景+枠線の円)を流用しつつ、
+     行の中に収まるよう.icon-btnの最小サイズ(44px)だけ小さく上書きする。 */
+  .wbs-toggle-slot { flex-shrink: 0; width: 26px; height: 26px; margin-right: 4px; }
+  .wbs-toggle-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 0; min-height: 0; padding: 0; font-size: 12px; line-height: 1;
+  }
+  /* ドラッグ中の行は最前面に浮かせ、影を付けて「持ち上げている」感を出す。
+     並び替えプレビュー用に他の行へ付けるtransformにはtransitionを効かせ、
+     ドラッグ中の行自身は指に追従させるため常に即時反映(transitionなし)。 */
+  .wbs-row.dragging { position: relative; z-index: 20; background: var(--bg-elevated); box-shadow: 0 4px 14px rgba(0,0,0,0.25); border-radius: 10px; }
+  .wbs-row.shifting { transition: transform 150ms ease; }
+  .wbs-quick-add-row { display: flex; gap: 8px; padding: 10px 5px 2px; align-items: center; flex-wrap: wrap; }
+  .wbs-quick-add-row input[type="text"], .wbs-quick-add-row select {
+    flex: 1; min-width: 120px; font-size: 16px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text);
+  }
+  .wbs-quick-add-row button {
+    flex-shrink: 0; font-size: 15px; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--accent);
+    background: var(--accent); color: var(--accent-contrast); cursor: pointer;
+  }
+  /* 名前未入力、または選択中の親の直下に既に同名のノードがある場合(=
+     全く同じ場所への重複作成になる場合)は作成ボタンを非活性にする。 */
+  .wbs-quick-add-row button:disabled {
+    border-color: var(--border); background: var(--border); color: var(--text-muted); cursor: default;
+  }
+  .wbs-quick-add-duplicate-note { width: 100%; font-size: 13px; color: var(--text-muted); }
+  .wbs-current-selection {
+    font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); margin-bottom: 8px;
+  }
+  .wbs-current-selection .wbs-deleted-label { margin-left: 4px; }
+  .wbs-search-input {
+    width: 100%; font-size: 16px; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); margin-bottom: 4px;
+  }
+  .wbs-row-path {
+    display: block; font-size: 13px; color: var(--text-muted); margin-top: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 
   .archive-note { font-size: 14px; color: var(--text-muted); margin-top: 12px; text-align: center; }
   .all-time-row {
@@ -448,6 +538,11 @@
           <span>復元(選択したファイルで現在のデータを上書きします)</span>
           <input type="file" id="importFile" accept="application/json">
         </div>
+        <hr>
+        <div class="field">
+          <span>すべてのタスク・WBS・設定・実績記録を端末から削除します(元に戻せません)</span>
+          <button class="btn danger-outline" data-action="settings:clear-all-data">🗑 全データを削除</button>
+        </div>
       </div>
     </div>
   </div>
@@ -462,26 +557,26 @@
     </div>
   </div>
 
-  <div id="tagsModal" class="modal hidden">
+  <div id="wbsModal" class="modal hidden">
     <div class="modal-card">
       <div class="modal-header">
-        <h2>タグ管理</h2>
-        <button class="icon-btn modal-close-btn" data-action="tags:close" aria-label="閉じる">✕</button>
-      </div>
-      <div id="tagsListBody"></div>
-      <hr>
-      <div class="field">
-        <span>親タグ(任意)</span>
-        <select id="tagParentSelect"><option value="">(トップレベル)</option></select>
+        <h2 id="wbsModalTitle">WBS管理</h2>
+        <button class="icon-btn modal-close-btn" id="wbsModalCloseBtn" data-action="wbs:close" aria-label="閉じる">✕</button>
       </div>
       <div class="field">
-        <span>タグ名</span>
-        <input type="text" id="tagNameInput" placeholder="例: 開発" maxlength="40">
+        <span>親ノード(任意)</span>
+        <select id="wbsParentSelect"><option value="">(トップレベル)</option></select>
+      </div>
+      <div class="field">
+        <span>ノード名</span>
+        <input type="text" id="wbsNameInput" placeholder="例: 開発" maxlength="40">
       </div>
       <div class="time-row">
-        <button class="btn primary" id="tagSubmitBtn" data-action="tags:add">タグを作成</button>
-        <button class="btn" id="tagCancelEditBtn" data-action="tags:cancel-edit" style="display:none">キャンセル</button>
+        <button class="btn primary" id="wbsSubmitBtn" data-action="wbs:add">ノードを作成</button>
+        <button class="btn" id="wbsCancelEditBtn" data-action="wbs:cancel-edit" style="display:none">キャンセル</button>
       </div>
+      <hr>
+      <div id="wbsListBody"></div>
     </div>
   </div>
 
@@ -491,20 +586,19 @@
         <h2 id="taskModalTitle">タスクを編集</h2>
         <button class="icon-btn modal-close-btn" data-action="task:edit-close" aria-label="閉じる">✕</button>
       </div>
-      <label class="field">
-        <span>タスク名</span>
-        <input type="text" id="editTaskTitle" maxlength="60">
-      </label>
-      <div id="editTitleHistoryContainer"></div>
       <div class="time-row" style="margin-bottom:14px">
         <input type="time" id="editTaskStart" step="900">
         <span>〜</span>
         <input type="time" id="editTaskEnd" step="900">
       </div>
       <div class="field">
-        <span>タグ</span>
-        <div id="editTagPickerContainer"></div>
+        <span>WBSノード</span>
+        <div id="editWbsPickerContainer"></div>
       </div>
+      <label class="field">
+        <span>備考(任意)</span>
+        <textarea id="editTaskMemo" maxlength="200" rows="2" style="font-size:16px; padding:11px 13px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); resize:vertical;"></textarea>
+      </label>
       <div id="taskEditOnlyFields">
         <label class="field">
           <span>実績時間(分)</span>
@@ -525,11 +619,9 @@
 <script>
 // ==== 1. 定数・設定値 ====
 const STORAGE_KEY = "1ds:state";
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
-const TITLE_HISTORY_MAX_AGE_DAYS = 180;
 const DAY_DETAIL_RETENTION_MONTHS = 6;
-const TAG_STALE_AFTER_DAYS = 60;
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
 // タイトル+時刻/実績+タグ1行が収まるようこの縮尺にしている。これ未満の
@@ -630,8 +722,7 @@ function defaultState() {
     activeSession: null,
     pausedSessions: {}, // taskId -> {kind, pausedRemainingMs}。一時停止中に他タスクへ切り替えた際の退避先
     lastOpenedDay: todayKey(),
-    tags: [],
-    taskTitleStats: {},
+    wbs: [], // WBSノード: {id, parentId, name, deleted}[]
     archive: { monthlySummaries: {} },
   };
 }
@@ -639,18 +730,17 @@ function ensureDay(state, dayKey) {
   if (!state.days[dayKey]) state.days[dayKey] = { tasks: [], finalized: false };
   return state.days[dayKey];
 }
+// タグ配列(state.tags)からWBSノード(state.wbs)への構造変更に伴い、
+// スキーマバージョン不一致(=旧バージョンが書いたデータ)は救済せず
+// defaultState()へ全リセットする(ユーザー確認済み。タスクの形自体が
+// title/tags必須からwbsNodeId必須+memo任意へ変わるため、フィールド単位の
+// 救済では旧タスクがwbsNodeIdを持てず不整合になる)。ここから下の処理は
+// 同一バージョン内での防御的補完(配列でなければ空配列にする等)のみ。
 function migrateState(raw) {
-  if (!raw || typeof raw !== "object") return defaultState();
+  if (!raw || typeof raw !== "object" || raw.schemaVersion !== SCHEMA_VERSION) return defaultState();
   const state = defaultState();
   state.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
   state.days = raw.days && typeof raw.days === "object" ? raw.days : {};
-  // 旧データ(schemaVersion 1)のtaskにはtagsが無いため補う。
-  for (const dayKey in state.days) {
-    const entry = state.days[dayKey];
-    if (Array.isArray(entry.tasks)) {
-      entry.tasks = entry.tasks.map(t => ({ ...t, tags: Array.isArray(t.tags) ? t.tags : [] }));
-    }
-  }
   state.streak = { current: 0, longest: 0, lastAchievedDay: null, ...(raw.streak || {}) };
   state.activeSession = raw.activeSession || null;
   // dayKeyの無い旧データ(このフィールド追加以前に保存されたactiveSession)は
@@ -663,8 +753,7 @@ function migrateState(raw) {
     if (!state.pausedSessions[tid].dayKey) state.pausedSessions[tid].dayKey = todayKey();
   }
   state.lastOpenedDay = raw.lastOpenedDay || todayKey();
-  state.tags = Array.isArray(raw.tags) ? raw.tags : [];
-  state.taskTitleStats = raw.taskTitleStats && typeof raw.taskTitleStats === "object" ? raw.taskTitleStats : {};
+  state.wbs = Array.isArray(raw.wbs) ? raw.wbs : [];
   state.archive = raw.archive && typeof raw.archive === "object" ? raw.archive : { monthlySummaries: {} };
   state.archive.monthlySummaries = state.archive.monthlySummaries && typeof state.archive.monthlySummaries === "object"
     ? state.archive.monthlySummaries : {};
@@ -716,7 +805,8 @@ function hasOverlap(tasks, startTime, endTime, excludeId) {
   const s = toMinutes(startTime), e = toMinutes(endTime);
   return tasks.some(t => t.id !== excludeId && toMinutes(t.startTime) < e && s < toMinutes(t.endTime));
 }
-function addTask(state, dayKey, { title, startTime, endTime, tags }) {
+function addTask(state, dayKey, { wbsNodeId, memo, startTime, endTime }) {
+  if (!wbsNodeId) throw new Error("WBSノードを選択してください");
   const computed = computePlannedPomodoros(startTime, endTime, pomodoroRoundMinutes(state.settings));
   if (!computed) throw new Error("終了時刻は開始時刻より後にしてください");
   const day = ensureDay(state, dayKey);
@@ -724,33 +814,15 @@ function addTask(state, dayKey, { title, startTime, endTime, tags }) {
     throw new Error("この時間帯には既に別のタスクがあります");
   }
   day.tasks.push({
-    id: genId(), title, startTime, endTime,
+    id: genId(), wbsNodeId, memo: memo || "", startTime, endTime,
     plannedMinutes: computed.plannedMinutes,
     plannedPomodoros: computed.plannedPomodoros,
     actualMinutes: 0,
     completed: false,
-    tags: Array.isArray(tags) ? tags : [],
   });
-  recordTitleUsage(state, title);
 }
-function recordTitleUsage(state, title) {
-  const stat = state.taskTitleStats[title];
-  if (stat) { stat.count += 1; stat.lastUsedDay = todayKey(); }
-  else { state.taskTitleStats[title] = { count: 1, lastUsedDay: todayKey() }; }
-}
-function getTitleSuggestions(state, limit = 6) {
-  return Object.entries(state.taskTitleStats)
-    .sort((a, b) => (b[1].count - a[1].count) || (b[1].lastUsedDay < a[1].lastUsedDay ? -1 : 1))
-    .slice(0, limit)
-    .map(([title]) => title);
-}
-function pruneTaskTitleStats(state, todayDayKey, maxAgeDays = TITLE_HISTORY_MAX_AGE_DAYS) {
-  const cutoff = addDays(todayDayKey, -maxAgeDays);
-  for (const title in state.taskTitleStats) {
-    if (state.taskTitleStats[title].lastUsedDay < cutoff) delete state.taskTitleStats[title];
-  }
-}
-function updateTask(state, dayKey, taskId, { title, startTime, endTime, tags, actualMinutes, completed }) {
+function updateTask(state, dayKey, taskId, { wbsNodeId, memo, startTime, endTime, actualMinutes, completed }) {
+  if (!wbsNodeId) throw new Error("WBSノードを選択してください");
   const day = state.days[dayKey]; if (!day) return;
   const task = day.tasks.find(t => t.id === taskId); if (!task) return;
   const computed = computePlannedPomodoros(startTime, endTime, pomodoroRoundMinutes(state.settings));
@@ -758,19 +830,21 @@ function updateTask(state, dayKey, taskId, { title, startTime, endTime, tags, ac
   if (hasOverlap(day.tasks, startTime, endTime, taskId)) {
     throw new Error("この時間帯には既に別のタスクがあります");
   }
-  task.title = title;
+  const prevWbsNodeId = task.wbsNodeId;
+  task.wbsNodeId = wbsNodeId;
+  task.memo = memo || "";
   task.startTime = startTime;
   task.endTime = endTime;
   task.plannedMinutes = computed.plannedMinutes;
   task.plannedPomodoros = computed.plannedPomodoros;
-  task.tags = Array.isArray(tags) ? tags : [];
   task.actualMinutes = Math.max(0, Math.round(actualMinutes));
   task.completed = !!completed;
-  recordTitleUsage(state, title);
+  if (prevWbsNodeId !== wbsNodeId) purgeOrphanedDeletedNodes(state);
 }
 function removeTask(state, dayKey, taskId) {
   const day = state.days[dayKey]; if (!day) return;
   day.tasks = day.tasks.filter(t => t.id !== taskId);
+  purgeOrphanedDeletedNodes(state);
 }
 // タイムラインのドラッグ(移動・端リサイズ)専用の時刻書き換え。updateTask
 // と違い重なりを例外で拒否しない(重なりの解決は呼び出し側が
@@ -861,103 +935,165 @@ function addActualMinutes(state, dayKey, taskId, minutes) {
   const task = day.tasks.find(t => t.id === taskId); if (!task) return;
   task.actualMinutes += minutes;
 }
-function buildTagPath(parent, name) {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("タグ名を入力してください");
-  return parent ? `${parent}/${trimmed}` : trimmed;
+// ==== 4a-wbs. WBS(作業分解構造)ノードCRUD ====
+// タグは"/"区切りのフラット文字列配列だったが、WBSはid/parentIdによる
+// 素直な木構造にした(state.wbs: {id, parentId, name, deleted}[])。
+// リネーム・親付け替えが文字列カスケード書き換え不要になり、中間ノードも
+// 常に実在するため「実タグとして登録されていない仮想的な祖先」を補う処理も
+// 不要になる(タグ実装より単純)。
+function wbsNodeById(state, id) {
+  return state.wbs.find(n => n.id === id) || null;
 }
-function addTagDefinition(state, parent, name) {
-  const path = buildTagPath(parent, name);
-  if (state.tags.includes(path)) throw new Error("同じ名前のタグが既にあります");
-  state.tags.push(path);
-  state.tags.sort();
+function wbsChildren(state, parentId) {
+  return state.wbs.filter(n => n.parentId === parentId);
 }
-// 自己/子孫を親にする(循環参照)・リネーム後のパスが無関係な既存タグと
-// 衝突する場合はそれぞれ例外を投げる。成功時は影響した全タグの
-// oldPath→newPathの対応をMapで返す(現状は呼び出し元では使っていないが、
-// タグ変更後に他の一時状態を追随させたくなった場合の拡張ポイントとして
-// 残している)。
-function renameTagCascade(state, oldPath, newPath) {
-  if (newPath === oldPath) return new Map();
-  if (newPath === oldPath || newPath.startsWith(oldPath + "/")) {
-    throw new Error("配下のタグを親にすることはできません");
-  }
-  const affected = state.tags.filter(t => t === oldPath || t.startsWith(oldPath + "/"));
-  const renameMap = new Map();
-  for (const tag of affected) {
-    const renamed = newPath + tag.slice(oldPath.length);
-    if (state.tags.includes(renamed) && !affected.includes(renamed)) {
-      throw new Error(`「${renamed}」は既に存在します`);
+// 兄弟(tombstoneを除く)内の任意位置への並び替え。targetIndexは「自分を
+// 除いた兄弟の並びの中で、自分がその位置に来るように挿し込む」インデックス。
+// 兄弟以外のノードとの相対関係(どの位置に他の親のノードが挟まっているか)
+// は変えたくないため、対象ノードの入れ替えは「配列の値を差し替えるだけ」で
+// 行う: 並び替え後の兄弟id列(newOrderIds)が現在state.wbs内で占めている
+// インデックス集合を昇順に求め(slots)、そのslotへnewOrderIdsを順番に
+// 割り当て直す。こうすることで、兄弟以外のノードの位置(=slot自体)は
+// 一切動かさず、対象の兄弟集合の中身の並びだけを希望通りに入れ替えられる。
+function reorderWbsNode(state, id, targetIndex) {
+  const node = wbsNodeById(state, id);
+  if (!node) return;
+  const siblings = wbsChildren(state, node.parentId).filter(n => !n.deleted);
+  const others = siblings.filter(n => n.id !== id);
+  const clamped = Math.max(0, Math.min(targetIndex, others.length));
+  const newOrderIds = [
+    ...others.slice(0, clamped).map(n => n.id),
+    id,
+    ...others.slice(clamped).map(n => n.id),
+  ];
+  const slots = newOrderIds
+    .map(nid => state.wbs.findIndex(n => n.id === nid))
+    .sort((a, b) => a - b);
+  const nodesById = new Map(state.wbs.map(n => [n.id, n]));
+  newOrderIds.forEach((nid, i) => { state.wbs[slots[i]] = nodesById.get(nid); });
+}
+function wbsDescendantIds(state, id) {
+  const result = [];
+  const stack = [id];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const child of wbsChildren(state, current)) {
+      result.push(child.id);
+      stack.push(child.id);
     }
-    renameMap.set(tag, renamed);
   }
-  state.tags = state.tags.map(t => renameMap.get(t) || t);
-  for (const dayKey in state.days) {
-    for (const task of state.days[dayKey].tasks) {
-      task.tags = task.tags.map(t => renameMap.get(t) || t);
-    }
-  }
-  state.tags.sort();
-  return renameMap;
+  return result;
 }
-function isTagRecentlyUsed(state, path, withinDays = TAG_STALE_AFTER_DAYS) {
-  const cutoff = addDays(todayKey(), -withinDays);
+function isWbsDescendantOf(state, id, ancestorId) {
+  return wbsDescendantIds(state, ancestorId).includes(id);
+}
+// 同じ親の直下に同名のノードが複数できる(=同じパスのノードが重複する)のを
+// 防ぐ。タスク追加時にサッと新規作成するユースケースでは、同名の兄弟タスクを
+// 連続入力しようとして誤って同じ名前をもう一度「新規作成」してしまう
+// (既存の候補を選び直すのを忘れる)ことが起こりうるため。親が違えば同名でも
+// 問題ない(例:「会議」が複数の親の下に別々に存在するのは許容する)。
+function addWbsNode(state, parentId, name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) throw new Error("ノード名を入力してください");
+  const normalizedParentId = parentId || null;
+  if (state.wbs.some(n => !n.deleted && (n.parentId || null) === normalizedParentId && n.name === trimmed)) {
+    throw new Error("同じ場所に同名のノードが既にあります");
+  }
+  const node = { id: genId(), parentId: normalizedParentId, name: trimmed, deleted: false };
+  state.wbs.push(node);
+  return node;
+}
+// 自己/子孫を親にしようとした場合は循環参照になるため例外を投げる。
+function renameWbsNode(state, id, newParentId, newName) {
+  const trimmed = (newName || "").trim();
+  if (!trimmed) throw new Error("ノード名を入力してください");
+  const parentId = newParentId || null;
+  if (parentId === id || isWbsDescendantOf(state, parentId, id)) {
+    throw new Error("配下のノードを親にすることはできません");
+  }
+  const node = wbsNodeById(state, id);
+  if (!node) return;
+  node.parentId = parentId;
+  node.name = trimmed;
+}
+function isWbsNodeReferenced(state, id) {
   for (const dayKey in state.days) {
-    if (dayKey < cutoff) continue;
-    if (state.days[dayKey].tasks.some(t => t.tags && t.tags.includes(path))) return true;
+    if (state.days[dayKey].tasks.some(t => t.wbsNodeId === id)) return true;
   }
   return false;
 }
-// 「未使用」のバッジは、自分自身だけでなく配下のタグも含めて全て未使用の
-// 場合だけ表示する。子タグが最近使われているのに親タグを「未使用」と
-// 表示すると、その分類全体が使われていないという誤解を招くため。
-function isTagSubtreeStale(state, path, withinDays = TAG_STALE_AFTER_DAYS) {
-  const subtree = [path, ...state.tags.filter(t => t.startsWith(path + "/"))];
-  return subtree.every(p => !isTagRecentlyUsed(state, p, withinDays));
-}
-// 中間ノードだけ削除すると子タグが実績集計に「幽霊祖先」として残るため、
-// サブツリーごとカスケード削除する。
-function removeTagCascade(state, path) {
-  const targets = state.tags.filter(t => t === path || t.startsWith(path + "/"));
-  state.tags = state.tags.filter(t => !targets.includes(t));
-  for (const dayKey in state.days) {
-    for (const task of state.days[dayKey].tasks) {
-      if (task.tags && task.tags.some(t => targets.includes(t))) {
-        task.tags = task.tags.filter(t => !targets.includes(t));
-      }
-    }
-  }
-  return targets;
-}
-function countTasksUsingTags(state, paths) {
+function countTasksUsingWbsNode(state, id) {
   let count = 0;
   for (const dayKey in state.days) {
-    for (const task of state.days[dayKey].tasks) {
-      if (task.tags && task.tags.some(t => paths.includes(t))) count += 1;
-    }
+    count += state.days[dayKey].tasks.filter(t => t.wbsNodeId === id).length;
   }
   return count;
 }
+// deleteWbsNode: cascadeは"promote"(このノードだけ削除、子はこのノードの
+// 親へ繰り上げ)または"subtree"(このノードと全子孫をまとめて削除対象に
+// する)。対象ノードは、参照中のタスクが残っていればdeleted=trueにして
+// 配列に残す(tombstone。タイムライン/実績集計で「削除済み」と分かる
+// 表示のまま残り続ける)。参照が無ければ配列から完全に除去する。
+function deleteWbsNode(state, id, { cascade }) {
+  const node = wbsNodeById(state, id);
+  if (!node) return;
+  if (cascade === "promote") {
+    for (const child of wbsChildren(state, id)) child.parentId = node.parentId;
+  }
+  const targets = cascade === "subtree" ? [id, ...wbsDescendantIds(state, id)] : [id];
+  for (const targetId of targets) {
+    const target = wbsNodeById(state, targetId);
+    if (!target) continue;
+    if (isWbsNodeReferenced(state, targetId)) {
+      target.deleted = true;
+    } else {
+      state.wbs = state.wbs.filter(n => n.id !== targetId);
+    }
+  }
+}
+// tombstone化したノードを参照するタスクが後から削除/付け替えされた際に
+// 呼ぶ掃除関数。「最後の参照が無くなった瞬間にtombstoneノードが完全に
+// 消える」を実現する(removeTask/updateTaskの末尾から呼ばれる)。
+function purgeOrphanedDeletedNodes(state) {
+  state.wbs = state.wbs.filter(n => !n.deleted || isWbsNodeReferenced(state, n.id));
+}
+// idから祖先を辿ってパンくず文字列を作る(例: "仕事 › 開発 › レビュー")。
+// タイムラインの箱のような省スペース箇所はnode.name(末尾のみ)で足りるが、
+// タスクの唯一の識別子になった集中タブの詳細カード等、文脈を示したい
+// 箇所ではこちらを使う。
+function wbsNodePath(state, id) {
+  const names = [];
+  let current = wbsNodeById(state, id);
+  const guard = new Set();
+  while (current && !guard.has(current.id)) {
+    names.unshift(current.name);
+    guard.add(current.id);
+    current = current.parentId ? wbsNodeById(state, current.parentId) : null;
+  }
+  return names.join(" › ");
+}
 // dayEntriesは複数日ぶんのエントリの配列(全期間集計のため)。ただし
 // 「全期間」は保持期間(既定6か月、state.archive参照)より前の月は
-// 月次サマリーに圧縮されタグ別の内訳を失っているため、実際には
-// 「保持期間内の全期間」が対象になる(呼び出し側・READMEで明記)。
-function computeTagAggregates(dayEntries) {
+// 月次サマリーに圧縮され内訳を失っているため、実際には「保持期間内の
+// 全期間」が対象になる(呼び出し側・READMEで明記)。タスクはwbsNodeIdを
+// 1つだけ持つため、タグ時代のような複数タグの重複排除Setは不要。
+function computeWbsAggregates(dayEntries, wbsNodes) {
   const totals = {};
-  const add = (path, planned, actual) => {
-    if (!totals[path]) totals[path] = { planned: 0, actual: 0 };
-    totals[path].planned += planned;
-    totals[path].actual += actual;
+  const add = (id, planned, actual) => {
+    if (!totals[id]) totals[id] = { planned: 0, actual: 0 };
+    totals[id].planned += planned;
+    totals[id].actual += actual;
   };
+  const nodeById = id => wbsNodes.find(n => n.id === id) || null;
   for (const entry of dayEntries) {
     for (const t of entry.tasks) {
-      const tags = t.tags && t.tags.length ? t.tags : ["(タグ無し)"];
-      const targets = new Set();
-      for (const tag of tags) {
-        const segs = tag.split("/");
-        for (let i = 1; i <= segs.length; i++) targets.add(segs.slice(0, i).join("/"));
+      const guard = new Set();
+      let current = nodeById(t.wbsNodeId);
+      while (current && !guard.has(current.id)) {
+        add(current.id, t.plannedMinutes, t.actualMinutes);
+        guard.add(current.id);
+        current = current.parentId ? nodeById(current.parentId) : null;
       }
-      for (const path of targets) add(path, t.plannedMinutes, t.actualMinutes);
     }
   }
   return totals;
@@ -1036,7 +1172,6 @@ function rolloverIfNeeded(state, now = new Date()) {
   if (state.lastOpenedDay !== today) {
     const prevDay = state.lastOpenedDay;
     finalizeDay(state, prevDay);
-    pruneTaskTitleStats(state, today);
     archiveOldMonths(state, today);
     state.pausedSessions = {}; // 前日の中断中セッションは新しい日には引き継がない
     state.lastOpenedDay = today;
@@ -1214,12 +1349,38 @@ let calendarViewMonth = null; // {year, month} カレンダーモーダルを開
 // タスクの新規作成・編集を共用する#taskEditModalの状態。editingTaskIdが
 // nullなら新規作成モード(dayKeyはeditingTaskDayKeyのまま作成先として使う)、
 // それ以外は編集モード。モーダルは排他的にしか開けないため(他のモーダルの
-// 全画面オーバーレイに遮られる)、taskFormTagsを追加・編集の両方で使い回す。
+// 全画面オーバーレイに遮られる)、taskFormWbsNodeIdを追加・編集の両方で
+// 使い回す。WBSノードはタスク1件につき1つの単一選択のためSetではない。
 let editingTaskId = null;
 let editingTaskDayKey = null;
-let taskFormTags = new Set();
-let editingTagPath = null; // タグ管理モーダルでリネーム編集中のタグパス(nullなら新規作成モード)
-let statsTagFilter = new Set(); // 実績タブのタグ別集計で絞り込み中のタグ(空なら全件表示)
+let taskFormWbsNodeId = null;
+// タスク編集モーダルのWBS新規作成ミニフォームで最後に使われた親ノードid
+// (nullはトップレベル)。setTaskFormWbsNode経由でノードが選択/作成される
+// たびに更新し、タスクの追加・モーダルの開閉をまたいでも(トップレベルへは
+// 戻さず)保持し続ける。「兄弟のタスクを連続入力する」ユースケースでは
+// 毎回同じ親を選び直す手間を省きたい、という要望に基づく。
+let wbsQuickAddParentId = null;
+let editingWbsNodeId = null; // WBS管理モーダルでリネーム編集中のノードid(nullなら新規作成モード)
+// WBS管理モーダルのツリーで折りたたみ中のノードidの集合。既定は全展開
+// (空集合)。表示上の一時状態なので永続化はせず、リロードで空に戻る。
+let wbsCollapsedNodeIds = new Set();
+// タスク編集モーダルの「🌳 WBSから選択」ボタンからWBS管理モーダルを
+// 開いた時にtrueになる。モーダルは同時に1つしか開けないため、タスク編集
+// モーダルは(状態を保ったまま)隠すだけにしてWBS管理モーダルへ切り替える
+// 「画面遷移」として実装しており、このフラグはWBS管理モーダル側の行に
+// 「選択」ボタンを出すかどうか、および✕/選択操作の戻り先をタスク編集
+// モーダルにするかどうかの分岐に使う。ヘッダーの🌳から直接開いた場合は
+// 常にfalseのまま(通常通り閉じるだけで戻り先が無い)。
+let wbsPickerReturnActive = false;
+// 実績タブのWBS別集計で明示的に展開したノードidの集合(WBS管理モーダルの
+// wbsCollapsedNodeIdsとは逆に「展開した側」を持つopt-in方式)。ドリルダウン
+// 方式だった頃の初期状態(「全体」からトップレベルしか見えない)に合わせ、
+// 既定は全折りたたみにしたいという要望から、「折りたたんだ側」ではなく
+// 「展開した側」を覚える形にした(空集合=全折りたたみが自然に既定になる)。
+// WBS管理モーダルの折りたたみ状態(既定は全展開)とは画面が違うので独立させて
+// いる(WBSを整理している最中の開閉状態と、実績を眺めている最中の開閉状態は
+// 別物として扱いたいため)。
+let statsExpandedNodeIds = new Set();
 let expandedTimelineTaskIds = new Set(); // タイムラインでタップして展開中の短いタスクのID
 // タイムラインの箱の「選択」状態を、2段階で管理する:
 // - selectedTimelineTaskId: タップ(拡張可能なタスクは展開/縮小のトグルも
@@ -1295,7 +1456,7 @@ function renderAppHeader() {
   const el = document.getElementById("appHeader");
   if (!el) return;
   const streakHtml = state.streak.current > 0 ? `<span class="header-streak">🔥${state.streak.current}</span>` : "";
-  const showDateNav = currentView === "today" || currentView === "focus";
+  const showDateNav = currentView === "today" || currentView === "focus" || currentView === "stats";
   const leftHtml = showDateNav
     ? renderHeaderDateNavHtml()
     : `<h1 class="app-title">1day scheduler ${streakHtml}</h1>`;
@@ -1306,7 +1467,7 @@ function renderAppHeader() {
         ${showDateNav ? streakHtml : ""}
         <button class="icon-btn glyph-icon-btn" id="undoBtn" data-action="task:undo" aria-label="元に戻す">↶</button>
         <button class="icon-btn glyph-icon-btn" id="redoBtn" data-action="task:redo" aria-label="やり直す">↷</button>
-        <button class="icon-btn" data-action="tags:open" aria-label="タグ管理">🏷️</button>
+        <button class="icon-btn" data-action="wbs:open" aria-label="WBS管理">🌳</button>
         <button class="icon-btn" data-action="settings-open" aria-label="設定">⚙️</button>
       </div>
     </div>
@@ -1354,46 +1515,86 @@ function renderUndoRedoButtons() {
   if (redoBtn) redoBtn.disabled = taskRedoStack.length === 0;
 }
 
-function tagChipLabel(path) { return path.split("/").pop(); }
-// インデントだけだと親子関係が追いにくいため、祖先パスを薄い文字で
-// パンくず形式(祖先パスを毎行繰り返す)は名前が長くなると冗長になるため、
-// treeコマンド風の罫線記号(├──/└──/│)でインデントを表現する。
-// tagPathsに含まれるタグの祖先パスが実タグとして存在しない場合(タグ名に
-// "/"を直接含めて一気に深い階層を作れる仕様のため起こり得る)も、暗黙の
-// 中間ノードとして木構造に含める(real:falseでマークし、行の表示側で
-// 編集/削除ボタンを出さない・薄い表示にする、等の判断に使う)。
-function buildTagTree(tagPaths) {
-  const allPaths = new Set();
-  for (const t of tagPaths) {
-    const segs = t.split("/");
-    for (let i = 1; i <= segs.length; i++) allPaths.add(segs.slice(0, i).join("/"));
-  }
-  const sorted = [...allPaths].sort();
-  const nodeMap = new Map();
-  const roots = [];
-  for (const path of sorted) {
-    const segs = path.split("/");
-    const node = { path, name: segs[segs.length - 1], children: [], real: tagPaths.includes(path) };
-    nodeMap.set(path, node);
-    const parentPath = segs.slice(0, -1).join("/");
-    if (parentPath && nodeMap.has(parentPath)) nodeMap.get(parentPath).children.push(node);
-    else roots.push(node);
-  }
-  return roots;
+function wbsNodeName(state, id) {
+  const node = wbsNodeById(state, id);
+  return node ? node.name : "";
 }
-// renderRow(node, treePrefixHtml)を各ノードについて呼び、木の罫線記号を
-// 4文字幅の等幅フォント(.tag-tree-prefix)で描画する(可変幅フォントでも
-// 罫線がズレないようにするため)。
-function renderTagTreeRows(nodes, prefix, renderRow) {
+// id/parentIdでグルーピングした素直な木構造を作る。タグ時代の
+// buildTagTreeにあった「実タグとして存在しない中間パスを仮想ノードとして
+// 補う」処理は、WBSでは親ノードが常に実在する(deleteWbsNodeが子を
+// 繰り上げ/道連れのどちらかで必ず正しい親を維持する)ため不要。念のため
+// 存在しないparentIdを参照するノードだけはルート扱いにフォールバックする
+// (取りこぼして非表示になることを避けるための安全策)。
+// 兄弟の並び順は名前の辞書順に並べ替えず、引数nodes(通常state.wbs)内での
+// 相対順序をそのまま使う(=既定は追加順、reorderWbsNodeでの並び替え結果も
+// そのまま反映される)。
+function buildWbsTree(nodes) {
+  const idSet = new Set(nodes.map(n => n.id));
+  const byParent = new Map();
+  for (const n of nodes) {
+    const key = n.parentId && idSet.has(n.parentId) ? n.parentId : null;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(n);
+  }
+  const build = parentId => (byParent.get(parentId) || []).map(n => ({
+    id: n.id, name: n.name, deleted: n.deleted, children: build(n.id),
+  }));
+  return build(null);
+}
+// renderRow(node, guides, isLast, isRoot)を各ノードについて呼ぶ。
+// - guides: 祖先(ルート直下から自分の親まで)各階層について「まだ後続の
+//   兄弟があるか」を表す真偽値の配列。ルート自身の枝は表示しない方針
+//   (下記参照)のため、ルート直下のノードから蓄積を始める。
+// - isLast: このノード自身が兄弟内で最後かどうか。自分の枝の縦棒を
+//   下まで伸ばす(=次の兄弟に繋げる)かどうかに使う。
+// - isRoot: このノードがルート(トップレベル)かどうか。ルートは見出し的な
+//   扱いとして枝を一切表示しない(フラットな一覧として並べる)。
+// renderRow側はrenderWbsGuideHtml(guides, isLast, isRoot)でインデント+
+// ガイド線を組み立てる。以前は"│   "/"├── "のような文字列を組み立てて
+// いたが、罫線記号だけで木構造を表現するのは古臭く見えるという指摘を
+// 受け、CSSで実際の線を引く方式に作り直した。さらに「後続の兄弟がある
+// 祖先階層だけ線を引く」だけの実装だと、並び替えの結果ノードが兄弟内の
+// 最後になった途端そのノード配下の接続線が完全に消えて見た目上フラットに
+// なる(内部の親子関係は保たれているのに繋がりが見えない)という実際に
+// 踏んだ不具合があったため、「自分から親への枝(上半分の縦棒+横スタブ)は
+// 兄弟内の位置に関わらず常に描画し、枝の下半分(次の兄弟へ繋げる部分)だけ
+// isLastで出し分ける」方式にした。
+// isCollapsed(id)が与えられ、あるノードについてtrueを返す場合、その
+// ノードの行自体は描画するがchildrenの再帰描画をスキップする(折りたたみ)。
+// 折りたたみは表示上のフィルタに過ぎずnodes自体(=state.wbs由来のツリー)は
+// 一切変更しないため、ドラッグ並び替え等のデータ操作には影響しない。
+function renderWbsTreeRows(nodes, guides, renderRow, isRootLevel, isCollapsed) {
   let html = "";
   nodes.forEach((node, i) => {
     const isLast = i === nodes.length - 1;
-    const connector = prefix + (isLast ? "└── " : "├── ");
-    const childPrefix = prefix + (isLast ? "    " : "│   ");
-    html += renderRow(node, connector);
-    html += renderTagTreeRows(node.children, childPrefix, renderRow);
+    html += renderRow(node, guides, isLast, !!isRootLevel);
+    if (!node.children.length || (isCollapsed && isCollapsed(node.id))) return;
+    const childGuides = isRootLevel ? [] : [...guides, !isLast];
+    html += renderWbsTreeRows(node.children, childGuides, renderRow, false, isCollapsed);
   });
   return html;
+}
+// guides/isLast/isRootから、縦ガイド線+自分の枝(.wbs-row直下に絶対配置
+// するspan列)とインデント幅を組み立てる。ルートは枝を一切描画しない
+// (indentPx=0)。非ルートは、祖先の継続線(guides、後続の兄弟がある階層
+// だけ)に加えて、自分の枝(常に上半分+横スタブを描画し、自分が最後で
+// なければ下半分も描画)を1列ぶん追加する。線は.wbs-row(position:relative)
+// の直接の子として絶対配置し、top:0;bottom:0(枝の上下半分はtop:0〜50%/
+// 50%〜100%)で行の高さいっぱいに伸ばすことで、隣接する行の線が継ぎ目なく
+// 繋がって見える。
+const WBS_GUIDE_STEP_PX = 18;
+function renderWbsGuideHtml(guides, isLast, isRoot) {
+  if (isRoot) return { linesHtml: "", indentPx: 0 };
+  const passThroughHtml = guides.map((hasMore, i) => hasMore
+    ? `<span class="wbs-guide-line" style="left:${i * WBS_GUIDE_STEP_PX + 8}px"></span>`
+    : ""
+  ).join("");
+  const branchLeft = guides.length * WBS_GUIDE_STEP_PX + 8;
+  const branchHtml =
+    `<span class="wbs-guide-branch-top" style="left:${branchLeft}px"></span>` +
+    `<span class="wbs-guide-branch-h" style="left:${branchLeft}px; width:${WBS_GUIDE_STEP_PX - 8}px"></span>` +
+    (isLast ? "" : `<span class="wbs-guide-branch-bottom" style="left:${branchLeft}px"></span>`);
+  return { linesHtml: passThroughHtml + branchHtml, indentPx: (guides.length + 1) * WBS_GUIDE_STEP_PX };
 }
 function formatHHMM(totalMin) {
   const clamped = Math.max(0, Math.min(24 * 60, totalMin));
@@ -1553,8 +1754,8 @@ function findSweptDriverId(taskId, sortedTasks) {
   const region = breakpoints.find(r => r.ws <= startMin && endMin <= r.we);
   return region ? region.driverTaskId : null;
 }
-// 高さが1時間ぶん(FULL_CONTENT_PX)以上ならタイトル+時刻/実績+タグ、
-// 未満ならタイトルのみに出し分ける。人工的な最低高さでクランプはしない
+// 高さが1時間ぶん(FULL_CONTENT_PX)以上ならWBSノード名+時刻/実績+備考、
+// 未満ならノード名のみに出し分ける。人工的な最低高さでクランプはしない
 // (隣接する短いタスク同士の見た目が実際の時間関係と矛盾して重なって
 // 見えるバグを避けるため)。短いタスクはタップで一時的に展開でき、
 // 展開すると高さがFULL_CONTENT_PXまで広がり(幅は変えない)、その分
@@ -1575,9 +1776,11 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
   // ロジックを、ボタンではなく箱本体タップに統合した)。
   const canToggleViaTap = isExpanded || isExpandable;
   const boxAction = canToggleViaTap ? "timeline:toggle-expand" : "timeline:select";
-  const tagsHtml = (showFull && t.tags && t.tags.length)
-    ? `<div class="task-tags">${t.tags.map(tag => `<span class="chip static">🏷️${escapeHtml(tagChipLabel(tag))}</span>`).join("")}</div>`
-    : "";
+  // 末尾のノード名だけだと親の文脈が分からないという指摘を受け、パンくず
+  // フルパスに変更した(.timeline-task-titleは既にellipsis省略設定済みの
+  // ため、長いパスでもレイアウトは崩れない)。
+  const nodePath = wbsNodePath(state, t.wbsNodeId);
+  const memoHtml = (showFull && t.memo) ? `<div class="task-memo">${escapeHtml(t.memo)}</div>` : "";
   // ✏️(編集)・⏱(集中タブへ)は今日・他日を問わず常設している(統一感の
   // ため)。⏱は選んだ上でselectedDateをそのタスクの日に合わせて集中タブへ
   // 切り替える(集中タブ自体がselectedDateを共用する日付ナビを持つように
@@ -1589,7 +1792,7 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
   // 付けないとライト/ダーク双方で見づらくなる問題を過去に繰り返し指摘
   // されており、新規追加時は指摘を受ける前から最初に付けるはずだった
   // ものを付け忘れていた。✏️は常に色付きで描画される真の絵文字のため
-  // 対象外(ヘッダーの↶↷とglyph-icon-btn無しの🏷️⚙️が同じ行で混在して
+  // 対象外(ヘッダーの↶↷とglyph-icon-btn無しの🌳⚙️が同じ行で混在して
   // いるのと同じ考え方)。
   const actionButtons = showFull
     ? `<div class="timeline-task-actions">
@@ -1610,10 +1813,10 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
     ? `<span class="timeline-expand-hint">⌃</span>`
     : (!showFull ? `<span class="timeline-expand-hint">⌄</span>` : "");
   const body = showFull
-    ? `<div class="timeline-task-title ${t.completed ? "done" : ""}">${escapeHtml(t.title)}</div>
+    ? `<div class="timeline-task-title ${t.completed ? "done" : ""}">${escapeHtml(nodePath)}</div>
        <div class="timeline-task-meta">${t.startTime}〜${t.endTime}・実績${formatDuration(t.actualMinutes)}</div>
-       ${tagsHtml}`
-    : `<div class="timeline-task-title compact ${t.completed ? "done" : ""}">${escapeHtml(t.title)}</div>`;
+       ${memoHtml}`
+    : `<div class="timeline-task-title compact ${t.completed ? "done" : ""}">${escapeHtml(nodePath)}</div>`;
   // ドラッグの移動・リサイズはポインタの移動量(delta)を実際の開始/終了分
   // (task.startTime/endTime)に加減するだけで、箱の見た目上の位置は一切
   // 参照しない(computeDragPreview参照)。そのため展開中(高さが架空)でも
@@ -1645,25 +1848,91 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
       ${resizeHandles}
     </div>`;
 }
-function renderTitleHistoryHtml() {
-  const suggestions = getTitleSuggestions(state);
-  if (!suggestions.length) return "";
-  return `<div class="chip-row">${suggestions.map(t =>
-    `<span class="chip" data-action="title-history:pick" data-title="${escapeHtml(t)}">${escapeHtml(t)}</span>`
-  ).join("")}</div>`;
+// タスク編集モーダルからWBSノードを選択/作成する箇所を1本化するための
+// ヘルパー。taskFormWbsNodeIdを更新するのと同時に、選ばれたノードの親を
+// wbsQuickAddParentIdへも反映する(次回の新規作成ミニフォームがその親を
+// 覚えているようにするため。「兄弟のタスクを連続入力する」ユースケースの
+// 一環)。検索候補から選ぶ・新規作成する・WBS管理モーダル(選択モード)から
+// 選ぶ、のいずれの経路でも必ずここを通す。
+function setTaskFormWbsNode(nodeId) {
+  taskFormWbsNodeId = nodeId;
+  const node = nodeId ? wbsNodeById(state, nodeId) : null;
+  if (node) wbsQuickAddParentId = node.parentId || null;
 }
-// タスク作成/編集モーダルで使い回すタグピッカー。selectedSetとactionを
-// 渡すことで呼び出し元の選択状態(taskFormTags)を混線させずに切り替える。
-function renderTagPickerHtml(selectedSet, action) {
-  if (!state.tags.length) {
-    // モーダルは排他的にしか開けないため、ここから別のモーダル(タグ管理)を
-    // 開くショートカットは置かない(以前はここに設置していたが、タスク
-    // モーダルを開いたままタグ管理を開けてしまい前提が崩れる不具合があった)。
-    return `<div class="chip-hint">タグはまだありません。ヘッダーの🏷️から作成できます。</div>`;
-  }
-  return `<div class="chip-row">${state.tags.map(tag =>
-    `<span class="chip${selectedSet.has(tag) ? " selected" : ""}" data-action="${action}" data-tag="${escapeHtml(tag)}">🏷️${escapeHtml(tagChipLabel(tag))}</span>`
-  ).join("")}</div>`;
+// タスク作成/編集モーダルのWBSノード選択欄。ノードが増えるほど全ツリーを
+// その場に展開する方式だと編集モーダルが縦に伸び続けてしまうため、名前の
+// 部分一致タイプアヘッド方式にした(state.wbsの規模によらず表示コストが
+// 一定)。一致が無ければその場で親ノードを選んで新規作成できる(常に
+// ルート直下ではなく任意の親を選べるようにしてほしい、というユーザー要望を
+// 反映)。より複雑な階層操作をしたい場合は「🌳 WBSから選択」ボタンから
+// WBS管理モーダルを選択モードで開く(wbsPickerReturnActive参照)。
+function renderEditWbsPicker() {
+  // 参照先が(何らかの理由で)もう存在しない場合は選択解除にフォールバック
+  // する(例: WBS管理モーダルでこのノードを削除し、他の参照も無く完全に
+  // 消えた場合。特に保存前の新規タスクは参照カウントに含まれないため
+  // 起こりうる)。
+  if (taskFormWbsNodeId && !wbsNodeById(state, taskFormWbsNodeId)) taskFormWbsNodeId = null;
+  const selectedNode = wbsNodeById(state, taskFormWbsNodeId);
+  const currentHtml = selectedNode
+    ? `${escapeHtml(wbsNodePath(state, taskFormWbsNodeId))}${selectedNode.deleted ? '<span class="wbs-deleted-label">(削除済み)</span>' : ""}`
+    : "(未選択)";
+  document.getElementById("editWbsPickerContainer").innerHTML = `
+    <div class="wbs-current-selection">${currentHtml}</div>
+    <input type="text" id="editWbsSearchInput" class="wbs-search-input" placeholder="名前で検索、無ければ新規作成" autocomplete="off">
+    <div id="editWbsSearchResults"></div>
+    <button type="button" class="btn" data-action="wbs-picker:open-full">🌳 WBSから選択</button>
+  `;
+  // 新規作成ミニフォーム(親ノード選択+作成ボタン)は、以前は検索文字列を
+  // 入力し始めてから初めて表示していたが、「名前を打つ前にまず親を選びたい
+  // 場合もある」という要望を受け、モーダルを開いた直後(クエリが空の状態)
+  // から常に表示するようにした。
+  renderWbsSearchResults("");
+}
+// 入力文字列に部分一致するノードを(親までのパンくず付きで)最大8件まで
+// 候補表示する。クエリが空でも(上記renderEditWbsPicker参照)、末尾には
+// 常に親ノード選択+作成ボタンのミニフォームを表示する(名前欄を別途設けず
+// 検索欄の文字列をそのまま新規ノード名として使う)。一致するノードが
+// 既にあっても、あえて同名の別ノードを別の場所に新規作成したい場合が
+// あるため、単なる部分一致では作成を止めない。ただし「選択中の親+入力中の
+// 名前」が完全に一致する既存ノードがある場合(=全く同じ場所に同名のノードを
+// 重複作成しようとしている)は、同じ兄弟入力を繰り返してしまう誤操作を
+// 防ぐため作成ボタンを非活性にする(addWbsNode側にも同じ判定があり、
+// 万一すり抜けてもそちらで最終的に弾かれる)。
+function renderWbsSearchResults(query) {
+  const container = document.getElementById("editWbsSearchResults");
+  if (!container) return;
+  const trimmed = (query || "").trim();
+  const matches = trimmed
+    ? state.wbs.filter(n => !n.deleted && n.name.includes(trimmed))
+        .sort((a, b) => a.name.localeCompare(b.name, "ja"))
+        .slice(0, 8)
+    : [];
+  const matchesHtml = matches.map(n => {
+    const ancestorPath = wbsNodePath(state, n.parentId);
+    return `<div class="wbs-row pickable" data-action="wbs-picker:select" data-id="${n.id}">
+      <span class="wbs-row-label stacked">
+        <span class="wbs-row-name">${escapeHtml(n.name)}</span>
+        ${ancestorPath ? `<span class="wbs-row-path">${escapeHtml(ancestorPath)}</span>` : ""}
+      </span>
+    </div>`;
+  }).join("");
+  const parentOptions = state.wbs.filter(n => !n.deleted);
+  // 親ノードの選択は、前回このミニフォームで(または既存ノードの選択で)
+  // 使われたwbsQuickAddParentIdを引き継ぐ(トップレベルへは戻さない)。
+  // 参照先が既に無い場合だけトップレベルへフォールバックする。
+  const parentValue = wbsQuickAddParentId && parentOptions.some(n => n.id === wbsQuickAddParentId)
+    ? wbsQuickAddParentId : "";
+  const isDuplicate = !!trimmed && state.wbs.some(n =>
+    !n.deleted && (n.parentId || null) === (parentValue || null) && n.name === trimmed);
+  const quickAddHtml = `<div class="wbs-quick-add-row">
+    <select id="editWbsQuickAddParentSelect">
+      <option value="" ${parentValue === "" ? "selected" : ""}>(トップレベル)</option>
+      ${parentOptions.map(n => `<option value="${n.id}" ${parentValue === n.id ? "selected" : ""}>${escapeHtml(wbsNodePath(state, n.id))}</option>`).join("")}
+    </select>
+    <button type="button" data-action="wbs-picker:quick-add" ${(!trimmed || isDuplicate) ? "disabled" : ""}>＋ 新規作成</button>
+  </div>
+  ${isDuplicate ? `<div class="wbs-quick-add-duplicate-note">同じ場所に同名のノードが既にあります</div>` : ""}`;
+  container.innerHTML = matchesHtml + quickAddHtml;
 }
 function renderNowBanner() {
   const el = document.getElementById("nowBanner");
@@ -1674,7 +1943,7 @@ function renderNowBanner() {
     if (status.type === "active") {
       const doneBadge = status.task.completed ? "(完了済み)" : "";
       el.className = "now-banner active";
-      el.innerHTML = `🟢 今: ${escapeHtml(status.task.title)}(${status.task.startTime}〜${status.task.endTime}) ${doneBadge}`;
+      el.innerHTML = `🟢 今: ${escapeHtml(wbsNodeName(state, status.task.wbsNodeId))}(${status.task.startTime}〜${status.task.endTime}) ${doneBadge}`;
       // 現在進行中のタスクがある場合だけ、バナー自体をタップして集中タブへ
       // 選択遷移できるようにする(次の予定/空き時間バナーはタップ不可のまま)。
       el.dataset.action = "task:select-focus";
@@ -1682,7 +1951,7 @@ function renderNowBanner() {
       el.dataset.day = todayKey();
     } else if (status.next) {
       el.className = "now-banner";
-      el.innerHTML = `☕ 今は空き時間です。次は ${status.next.startTime}〜 ${escapeHtml(status.next.title)}`;
+      el.innerHTML = `☕ 今は空き時間です。次は ${status.next.startTime}〜 ${escapeHtml(wbsNodeName(state, status.next.wbsNodeId))}`;
       delete el.dataset.action; delete el.dataset.id;
     } else {
       el.className = "now-banner";
@@ -1822,12 +2091,11 @@ function openTaskModal(taskId, dayKey) {
   document.getElementById("taskModalSaveBtn").textContent = isEdit ? "保存" : "追加";
   document.getElementById("taskModalDeleteBtn").style.display = isEdit ? "" : "none";
   document.getElementById("taskEditOnlyFields").style.display = isEdit ? "" : "none";
-  document.getElementById("editTaskTitle").value = isEdit ? task.title : "";
   document.getElementById("editTaskStart").value = isEdit ? task.startTime : "";
   document.getElementById("editTaskEnd").value = isEdit ? task.endTime : "";
-  taskFormTags = new Set(isEdit ? (task.tags || []) : []);
-  renderEditTagPicker();
-  document.getElementById("editTitleHistoryContainer").innerHTML = isEdit ? "" : renderTitleHistoryHtml();
+  document.getElementById("editTaskMemo").value = isEdit ? (task.memo || "") : "";
+  taskFormWbsNodeId = isEdit ? task.wbsNodeId : null;
+  renderEditWbsPicker();
   if (isEdit) {
     document.getElementById("editTaskActual").value = task.actualMinutes;
     document.getElementById("editTaskCompleted").checked = task.completed;
@@ -1847,17 +2115,13 @@ function openTaskCreateModal(dayKey, prefillStart, prefillEnd) {
   document.getElementById("editTaskStart").value = prefillStart || "";
   document.getElementById("editTaskEnd").value = prefillEnd || "";
 }
-function renderEditTagPicker() {
-  document.getElementById("editTagPickerContainer").innerHTML =
-    renderTagPickerHtml(taskFormTags, "edit-tag-chip:toggle");
-}
 function closeTaskEditModal() {
   document.getElementById("taskEditModal").classList.add("hidden");
   editingTaskId = null;
   editingTaskDayKey = null;
 }
 function saveTaskEditFromForm() {
-  const title = document.getElementById("editTaskTitle").value.trim();
+  const memo = document.getElementById("editTaskMemo").value.trim();
   // 開始・終了時刻は必ず15分刻みに揃える(step="900"はSafariのホイール
   // ピッカーには効くが、手入力やそれ以外のブラウザでは素通りしうるため、
   // ここで最終的にスナップし直す)。
@@ -1876,17 +2140,18 @@ function saveTaskEditFromForm() {
       : Number(actualInput.value);
   }
   const completed = isEdit ? document.getElementById("editTaskCompleted").checked : false;
-  if (!title || !start || !end) { alert("タスク名・時刻を入力してください"); return; }
+  if (!start || !end) { alert("時刻を入力してください"); return; }
+  if (!taskFormWbsNodeId) { alert("WBSノードを選択してください"); return; }
   if (!Number.isFinite(actual) || actual < 0) { alert("実績時間は0以上の数値にしてください"); return; }
   recordUndoPoint();
   try {
     if (isEdit) {
       updateTask(state, editingTaskDayKey, editingTaskId, {
-        title, startTime: start, endTime: end,
-        tags: [...taskFormTags], actualMinutes: actual, completed,
+        wbsNodeId: taskFormWbsNodeId, memo, startTime: start, endTime: end,
+        actualMinutes: actual, completed,
       });
     } else {
-      addTask(state, editingTaskDayKey, { title, startTime: start, endTime: end, tags: [...taskFormTags] });
+      addTask(state, editingTaskDayKey, { wbsNodeId: taskFormWbsNodeId, memo, startTime: start, endTime: end });
     }
     saveState(state);
     closeTaskEditModal();
@@ -1965,7 +2230,7 @@ function renderFocusView({ resetScroll = false } = {}) {
     const doneMark = t.completed ? "✓ " : "";
     const otherDayMark = (sessionTaskOtherDay && t.id === session.taskId)
       ? `(${formatJapaneseDate(dayKeyToDate(session.dayKey))}から継続) ` : "";
-    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${otherDayMark}${escapeHtml(t.title)}</option>`;
+    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${otherDayMark}${escapeHtml(wbsNodeName(state, t.wbsNodeId))}</option>`;
   }).join("");
 
   let timerHtml;
@@ -1976,7 +2241,7 @@ function renderFocusView({ resetScroll = false } = {}) {
     const blocksDone = task ? Math.round(task.actualMinutes / state.settings.focusMinutes) : 0;
     const blocksTotal = task ? task.plannedPomodoros : 0;
     timerHtml = `
-      <div class="timer-phase">${phase}${task ? "・" + escapeHtml(task.title) : ""}</div>
+      <div class="timer-phase">${phase}${task ? "・" + escapeHtml(wbsNodeName(state, task.wbsNodeId)) : ""}</div>
       <div class="timer-display">${formatMMSS(remaining)}</div>
       ${task ? `<div class="timer-progress">${blocksDone}/${blocksTotal} ブロック完了</div>` : ""}
       <div class="timer-controls">
@@ -2023,16 +2288,17 @@ function renderFocusView({ resetScroll = false } = {}) {
 }
 function renderFocusTaskDetailHtml(task) {
   if (!task) return "";
-  const tagsHtml = (task.tags && task.tags.length)
-    ? `<div class="task-tags">${task.tags.map(tag => `<span class="chip static">🏷️${escapeHtml(tagChipLabel(tag))}</span>`).join("")}</div>`
-    : "";
+  // 集中タブはタスクの唯一の識別子であるWBSノードを確認してから取り組む
+  // 場面のため、タイムラインの箱(末尾の名前のみ)より文脈が伝わるよう
+  // パンくずのフルパスで表示する。
+  const memoHtml = task.memo ? `<div class="task-memo">${escapeHtml(task.memo)}</div>` : "";
   return `
     <div class="focus-task-detail">
-      <div class="focus-task-detail-title ${task.completed ? "done" : ""}">${escapeHtml(task.title)}${task.completed ? "(完了済み)" : ""}</div>
+      <div class="focus-task-detail-title ${task.completed ? "done" : ""}">${escapeHtml(wbsNodePath(state, task.wbsNodeId))}${task.completed ? "(完了済み)" : ""}</div>
       <div class="focus-task-detail-meta">
         ${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}(🍅${task.plannedPomodoros})・実績${formatDuration(task.actualMinutes)}
       </div>
-      ${tagsHtml}
+      ${memoHtml}
     </div>`;
 }
 
@@ -2048,14 +2314,27 @@ function buildHeatmap(days) {
   }
   return html;
 }
-function renderStatsView() {
+// resetScroll:trueはタブ切り替え(switchView)の時だけ指定する。予定/集中
+// タブのrenderTodayView({autoscroll})/renderFocusView({resetScroll})と同じ
+// 考え方だが、実績タブは日付ナビ操作(renderCurrentDateView)では他の2タブと
+// 違って画面の大半(streak・ヒートマップ・WBS別集計)がselectedDateに連動
+// しない(完了率の表のみ連動)ため、日付ナビのたびにリセットすると
+// WBS別集計を見ながら日付を送っているだけのユーザーの体験を損なう。その
+// ため日付ナビ側(renderCurrentDateView)ではresetScrollを渡さず、「タブに
+// 入った直後だけ先頭が見える」という初期状態の保証だけに絞っている。
+function renderStatsView({ resetScroll = false } = {}) {
   const container = document.getElementById("statsView");
-  const entry = getTodayEntry();
+  // 完了率・タスク一覧は日付ナビで選んでいる日(selectedDate)基準に切り替える
+  // (予定/集中タブと同様)。一方streak・ヒートマップ・WBS別集計・全期間の
+  // 実績は特定の1日に紐づく値ではないため、実際の今日/全期間基準のまま
+  // 据え置く(streakは仕様上常に実際の今日基準、ヒートマップは直近28日の
+  // 傾向表示、WBS別集計・全期間実績は集計期間全体が対象)。
+  const entry = getEntryForDate(selectedDate);
   const rate = computeCompletionRate(entry);
   const allTime = computeAllTimeTotals(state);
   const rows = entry.tasks.map(t => `
     <tr>
-      <td>${escapeHtml(t.title)}</td>
+      <td>${escapeHtml(wbsNodeName(state, t.wbsNodeId))}</td>
       <td>${formatDuration(t.plannedMinutes)}</td>
       <td>${formatDuration(t.actualMinutes)}</td>
       <td>${t.completed ? "✅" : "—"}</td>
@@ -2073,12 +2352,12 @@ function renderStatsView() {
       </div>
       <div class="streak-box">
         <div class="streak-value">${Math.round(rate * 100)}%</div>
-        <div class="streak-label">今日の完了率</div>
+        <div class="streak-label">完了率</div>
       </div>
     </div>
     <table class="today-table">
       <thead><tr><th>タスク</th><th>計画</th><th>実績</th><th>完了</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="4" class="empty-hint">今日のタスクはまだありません</td></tr>'}</tbody>
+      <tbody>${rows || '<tr><td colspan="4" class="empty-hint">タスクはまだありません</td></tr>'}</tbody>
     </table>
     <div class="heatmap-section">
       <div class="heatmap-title">直近28日間</div>
@@ -2086,50 +2365,113 @@ function renderStatsView() {
       <div id="heatmapDetail" class="heatmap-detail"></div>
     </div>
     <div class="heatmap-section">
-      <div class="heatmap-title">タグ別集計(保持期間内の全期間・複数タグを持つタスクは両方に計上されます)</div>
-      ${renderTagAggregatesHtml()}
+      <div class="app-header-row wbs-agg-header-row">
+        <div class="heatmap-title">WBS別集計(保持期間内の全期間)</div>
+        ${renderWbsAggToggleAllBtnHtml()}
+      </div>
+      ${renderWbsAggregatesHtml()}
     </div>
     <div class="all-time-row">📚 全期間の実績: ${formatDuration(allTime.actualMinutes)}(完了 ${allTime.completedCount}件)</div>
   `;
+  // 日付ナビ・streakバッジはヘッダーに統合済み(renderAppHeader参照)。
+  // 予定/集中タブと同様、日付ナビ操作のたびにヘッダー側も更新する。
+  renderAppHeader();
+  if (resetScroll) {
+    const main = document.querySelector("main");
+    if (main) main.scrollTop = 0;
+  }
 }
-function renderTagFilterChipsHtml() {
-  if (!state.tags.length) return "";
-  return `<div class="chip-row">${state.tags.map(tag =>
-    `<span class="chip${statsTagFilter.has(tag) ? " selected" : ""}" data-action="stats:tag-filter-toggle" data-tag="${escapeHtml(tag)}">🏷️${escapeHtml(tagChipLabel(tag))}</span>`
-  ).join("")}</div>`;
+// buildWbsTree(state.wbs)が返す木(実ノードのみ)に、表示専用の「その他」
+// 合成ノードを差し込む。子ノードだけでなくそのノード自身に直接割り当て
+// られたタスクもありうる(リーフでないノードにもタスクを割り当てられる
+// 仕様のため)ため、子を持つノードでは(自ノード合計−子ノード合計の総和)を
+// 計算し、正の場合だけ末尾に葉として追加する。isOther/valueは合成ノード
+// 専用のフィールドで、実ノード(state.wbs由来)には存在しない。
+function buildWbsStatsTree(tree, totals) {
+  const zero = { planned: 0, actual: 0 };
+  return tree.map(node => {
+    const children = buildWbsStatsTree(node.children, totals);
+    if (node.children.length > 0) {
+      const nodeTotal = totals[node.id] || zero;
+      const childPlannedSum = node.children.reduce((sum, c) => sum + (totals[c.id] ? totals[c.id].planned : 0), 0);
+      const childActualSum = node.children.reduce((sum, c) => sum + (totals[c.id] ? totals[c.id].actual : 0), 0);
+      const otherPlanned = nodeTotal.planned - childPlannedSum;
+      const otherActual = nodeTotal.actual - childActualSum;
+      if (otherPlanned > 0 || otherActual > 0) {
+        children.push({
+          id: `${node.id}:other`, name: "その他(このノードに直接割り当てられたタスク)",
+          deleted: false, children: [], isOther: true, value: { planned: otherPlanned, actual: otherActual },
+        });
+      }
+    }
+    return { ...node, children };
+  });
+}
+// 木(buildWbsTree由来、合成「その他」ノードは子を持たないので自然に除外
+// される)を歩いて、子を持つノード(=折りたたみ/展開の対象になりうる
+// ノード)のidを列挙する。全展開/全折りたたみボタンの対象集合と、
+// そのボタン自体の「今すべて展開済みか」判定の両方で使う。
+function wbsTreeIdsWithChildren(tree) {
+  const ids = [];
+  const walk = nodes => {
+    for (const n of nodes) {
+      if (n.children.length) { ids.push(n.id); walk(n.children); }
+    }
+  };
+  walk(tree);
+  return ids;
+}
+// タイムラインの▾/▴(短いタスクの全展開/全折りたたみ、renderHeaderDateNavHtml
+// 参照)と同じ、単一ボタンでの全展開⇄全折りたたみ切り替え。対象(子を持つ
+// ノード)が1つも無ければ日付ナビのボタンと同様disabledにする。
+function renderWbsAggToggleAllBtnHtml() {
+  const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs));
+  const hasAny = idsWithChildren.length > 0;
+  const allExpanded = hasAny && idsWithChildren.every(id => statsExpandedNodeIds.has(id));
+  return `<button class="icon-btn date-nav-btn" data-action="stats:toggle-collapse-all"
+    aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
 }
 // 「全期間」は保持期間(既定6か月)より前の月は月次サマリーに圧縮され
-// タグ別の内訳が失われているため、実際には「保持期間内の全期間」が対象
-// (README/CLAUDE.mdに明記)。タグを選択すると、そのタグ自身と配下の
-// 階層タグだけに絞り込む(複数選択時はいずれかに一致すれば表示)。
-function renderTagAggregatesHtml() {
-  const totals = computeTagAggregates(Object.values(state.days));
-  const filterActive = statsTagFilter.size > 0;
-  // 子孫タグを選択した場合、その祖先タグの行も(木の罫線記号の整合性を
-  // 保つため)一緒に表示する。祖先行には自分自身の(配下すべてを含む)
-  // 実際の集計値をそのまま出す(隠さない)。
-  const passesFilter = path => !filterActive || [...statsTagFilter].some(f =>
-    path === f || path.startsWith(f + "/") || f.startsWith(path + "/")
-  );
-  const tree = buildTagTree(Object.keys(totals).filter(p => p !== "(タグ無し)"));
-  let rowsHtml = renderTagTreeRows(tree, "", (node, prefix) => {
-    if (!passesFilter(node.path)) return "";
-    const t = totals[node.path];
-    if (!t) {
-      // 実データの無い暗黙の中間ノード(木構造を保つためだけに存在)
-      return `<div class="tag-agg-row"><span><span class="tag-tree-prefix">${prefix}</span><span class="tag-virtual-label">${escapeHtml(node.name)}</span></span><span></span></div>`;
-    }
-    return `<div class="tag-agg-row">
-      <span><span class="tag-tree-prefix">${prefix}</span>${escapeHtml(node.name)}</span>
-      <span>${formatDuration(t.planned)} 計画 / ${formatDuration(t.actual)} 実績</span>
+// 内訳が失われているため、実際には「保持期間内の全期間」が対象
+// (README/CLAUDE.mdに明記)。
+// 以前はパンくず+行タップで1段ずつ子ノードに潜るドリルダウン方式だった
+// (現在地の直下しか描画しないためスケールする、という理由で採用)。
+// しかし「開閉をフィルタとして捉えれば、もっとシンプルに表現できるのでは」
+// という指摘を受けて考え直した結果、WBS管理モーダル用に作った折りたたみ
+// つきツリー(renderWbsTreeRows/renderWbsGuideHtml、wbsCollapsedNodeIds)を
+// そのまま流用する方式に置き換えた。computeWbsAggregatesが元々全ノード分の
+// ロールアップ済み集計を返していたため、「折りたたんでも自分自身の合計は
+// 表示され続け、子の内訳行だけ隠れる」(Finderのフォルダサイズ表示や会計の
+// 費目集計ツリーと同じ)という素直な挙動になり、パンくず往復なしで複数
+// ブランチの合計を見比べられるようにもなった。「潜れる行」を示すための
+// 専用スタイル(アクセント色+太字+シェブロン)も、WBS管理モーダルの
+// ▼/▶トグルが同じ役割を兼ねるため不要になった。
+function renderWbsAggregatesHtml() {
+  if (!state.wbs.length) return '<div class="empty-hint">WBSノードはまだありません</div>';
+  const totals = computeWbsAggregates(Object.values(state.days), state.wbs);
+  const zero = { planned: 0, actual: 0 };
+  const tree = buildWbsStatsTree(buildWbsTree(state.wbs), totals);
+  return renderWbsTreeRows(tree, [], (node, guides, isLast, isRoot) => {
+    const guide = renderWbsGuideHtml(guides, isLast, isRoot);
+    const hasChildren = node.children.length > 0;
+    const collapsed = !statsExpandedNodeIds.has(node.id);
+    const toggleHtml = hasChildren
+      ? `<button type="button" class="icon-btn glyph-icon-btn wbs-toggle-slot wbs-toggle-btn" data-action="stats:toggle-collapse" data-id="${node.id}" aria-label="${collapsed ? "展開" : "折りたたむ"}" aria-expanded="${!collapsed}">${collapsed ? "▶" : "▼"}</button>`
+      : `<span class="wbs-toggle-slot"></span>`;
+    const t = node.isOther ? node.value : (totals[node.id] || zero);
+    const nameHtml = node.isOther
+      ? `<span class="wbs-row-name wbs-agg-other-label">${escapeHtml(node.name)}</span>`
+      : node.deleted
+        ? `<span class="wbs-row-name wbs-deleted-label">${escapeHtml(node.name)}(削除済み)</span>`
+        : `<span class="wbs-row-name">${escapeHtml(node.name)}</span>`;
+    return `<div class="wbs-row">
+      ${guide.linesHtml}
+      <span class="wbs-row-label" style="padding-left:${guide.indentPx}px">
+        ${toggleHtml}${nameHtml}
+      </span>
+      <span class="wbs-row-value">${formatDuration(t.planned)} 計画 / ${formatDuration(t.actual)} 実績</span>
     </div>`;
-  });
-  if (totals["(タグ無し)"] && !filterActive) {
-    const t = totals["(タグ無し)"];
-    rowsHtml += `<div class="tag-agg-row"><span>(タグ無し)</span><span>${formatDuration(t.planned)} 計画 / ${formatDuration(t.actual)} 実績</span></div>`;
-  }
-  if (!rowsHtml) rowsHtml = '<div class="empty-hint">該当するタスクがありません</div>';
-  return renderTagFilterChipsHtml() + rowsHtml;
+  }, true, id => !statsExpandedNodeIds.has(id));
 }
 
 function switchView(view) {
@@ -2139,15 +2481,16 @@ function switchView(view) {
   renderAppHeader();
   if (view === "today") renderTodayView({ autoscroll: true });
   if (view === "focus") renderFocusView({ resetScroll: true });
-  if (view === "stats") renderStatsView();
+  if (view === "stats") renderStatsView({ resetScroll: true });
 }
-// 予定タブ・集中タブはselectedDateを共用しているため、日付ナビ(date:prev等・
-// カレンダーのcal:pick)は現在表示中のタブに応じてどちらか一方だけを
-// 再描画する(非表示のタブは次に切り替えられた時に作り直されるため
-// 先回りの再描画は不要)。
+// 予定タブ・集中タブ・実績タブはselectedDateを共用しているため、日付ナビ
+// (date:prev等・カレンダーのcal:pick)は現在表示中のタブに応じてどれか
+// 1つだけを再描画する(非表示のタブは次に切り替えられた時に作り直される
+// ため先回りの再描画は不要)。
 function renderCurrentDateView() {
   if (currentView === "today") renderTodayView({ autoscroll: true });
   if (currentView === "focus") renderFocusView({ resetScroll: true });
+  if (currentView === "stats") renderStatsView();
 }
 
 // ---- 6a. カレンダーモーダル ----
@@ -2201,67 +2544,95 @@ function renderCalendarModal() {
   `;
 }
 
-// ---- 6c. タグ管理モーダル ----
-function openTagsModal() {
-  renderTagsModal();
-  document.getElementById("tagsModal").classList.remove("hidden");
+// ---- 6c. WBS管理モーダル ----
+function openWbsModal() {
+  renderWbsModal();
+  document.getElementById("wbsModal").classList.remove("hidden");
 }
-function closeTagsModal() {
-  document.getElementById("tagsModal").classList.add("hidden");
-  editingTagPath = null;
+function closeWbsModal() {
+  document.getElementById("wbsModal").classList.add("hidden");
+  editingWbsNodeId = null;
 }
-function renderTagsModal() {
-  const sorted = [...state.tags].sort();
-  const tree = buildTagTree(sorted);
-  const listHtml = sorted.length
-    ? renderTagTreeRows(tree, "", (node, prefix) => {
-        if (!node.real) {
-          // タグ名に"/"を直接含めて作られた深い階層で、中間の親が実タグとして
-          // 登録されていない場合の暗黙ノード。編集/削除の対象ではないので
-          // ボタンは出さず、薄い表示に留める。
-          return `<div class="tag-row">
-            <span><span class="tag-tree-prefix">${prefix}</span><span class="tag-virtual-label">${escapeHtml(node.name)}</span></span>
+function renderWbsModal() {
+  document.getElementById("wbsModalTitle").textContent = wbsPickerReturnActive ? "WBS管理(タスクの選択)" : "WBS管理";
+  document.getElementById("wbsModalCloseBtn").setAttribute("aria-label", wbsPickerReturnActive ? "閉じる(タスク編集に戻る)" : "閉じる");
+  const tree = buildWbsTree(state.wbs);
+  const listHtml = state.wbs.length
+    ? renderWbsTreeRows(tree, [], (node, guides, isLast, isRoot) => {
+        const guide = renderWbsGuideHtml(guides, isLast, isRoot);
+        // 折りたたみトグル。展開可否に関わらず全行で同じ幅のスロットを
+        // 確保し(子を持たない行は空スロット)、名前の開始位置を揃える
+        // (ファイルツリーでファイルにだけchevronを出さないのと同じ考え方)。
+        // tombstone行にも出す(subtree削除では子孫もtombstoneのまま残り
+        // うるため、tombstone配下も折りたためないと揃えた意味が無い)。
+        const hasChildren = node.children.length > 0;
+        const collapsed = wbsCollapsedNodeIds.has(node.id);
+        const toggleHtml = hasChildren
+          ? `<button type="button" class="icon-btn glyph-icon-btn wbs-toggle-slot wbs-toggle-btn" data-action="wbs:toggle-collapse" data-id="${node.id}" aria-label="${collapsed ? "展開" : "折りたたむ"}" aria-expanded="${!collapsed}">${collapsed ? "▶" : "▼"}</button>`
+          : `<span class="wbs-toggle-slot"></span>`;
+        if (node.deleted) {
+          // tombstone: 参照中のタスクが残っている間だけ配列に残るノード。
+          // 編集/削除の対象ではないので薄い表示+参照件数だけ示す。
+          const count = countTasksUsingWbsNode(state, node.id);
+          return `<div class="wbs-row">
+            ${guide.linesHtml}
+            <span class="wbs-row-label" style="padding-left:${guide.indentPx}px">
+              ${toggleHtml}
+              <span class="wbs-row-name wbs-deleted-label">${escapeHtml(node.name)}(削除済み・参照${count}件)</span>
+            </span>
           </div>`;
         }
-        const stale = isTagSubtreeStale(state, node.path)
-          ? `<span class="tag-stale-badge">${TAG_STALE_AFTER_DAYS}日以上未使用</span>` : "";
-        return `<div class="tag-row">
-          <span><span class="tag-tree-prefix">${prefix}</span>${escapeHtml(node.name)}${stale}</span>
-          <span>
-            <button class="icon-btn" data-action="tags:edit-start" data-tag="${escapeHtml(node.path)}" aria-label="編集">✏️</button>
-            <button class="icon-btn danger" data-action="tags:delete" data-tag="${escapeHtml(node.path)}" aria-label="削除">🗑</button>
+        // タスク編集モーダルの「🌳 WBSから選択」経由(wbsPickerReturnActive)
+        // の間だけ、✏️🗑に加えて✅(選択)を出す。タスクの所属先をこの画面から
+        // 直接決めて編集モーダルへ戻れるようにするため。
+        const pickBtn = wbsPickerReturnActive
+          ? `<button class="icon-btn" data-action="wbs-picker:pick" data-id="${node.id}" aria-label="選択">✅</button>`
+          : "";
+        const realNode = wbsNodeById(state, node.id);
+        const parentAttr = realNode.parentId || "";
+        return `<div class="wbs-row" data-id="${node.id}" data-parent-id="${parentAttr}">
+          ${guide.linesHtml}
+          <span class="wbs-row-label" style="padding-left:${guide.indentPx}px">
+            ${toggleHtml}
+            <span class="wbs-row-name">${escapeHtml(node.name)}</span>
+          </span>
+          <span class="wbs-row-actions">
+            ${pickBtn}
+            <button type="button" class="icon-btn glyph-icon-btn wbs-drag-handle" data-id="${node.id}" aria-label="ドラッグして並び替え">⠿</button>
+            <button class="icon-btn" data-action="wbs:edit-start" data-id="${node.id}" aria-label="編集">✏️</button>
+            <button class="icon-btn danger" data-action="wbs:delete" data-id="${node.id}" aria-label="削除">🗑</button>
           </span>
         </div>`;
-      })
-    : '<div class="empty-hint">タグはまだありません</div>';
-  document.getElementById("tagsListBody").innerHTML = listHtml;
-  // 編集中のタグ自身とその配下は親候補から除外する(循環参照を防ぐ)。
-  const excluded = editingTagPath ? sorted.filter(t => t === editingTagPath || t.startsWith(editingTagPath + "/")) : [];
-  const parentOptions = sorted.filter(t => !excluded.includes(t));
-  const select = document.getElementById("tagParentSelect");
+      }, true, id => wbsCollapsedNodeIds.has(id))
+    : '<div class="empty-hint">WBSノードはまだありません</div>';
+  document.getElementById("wbsListBody").innerHTML = listHtml;
+  // 編集中のノード自身とその配下、およびtombstone化したノードは親候補から除外する
+  // (前者は循環参照を防ぐため、後者は削除済みノードの下に新たに作らせないため)。
+  const excludedIds = editingWbsNodeId ? [editingWbsNodeId, ...wbsDescendantIds(state, editingWbsNodeId)] : [];
+  const parentOptions = state.wbs.filter(n => !n.deleted && !excludedIds.includes(n.id));
+  const select = document.getElementById("wbsParentSelect");
   select.innerHTML = '<option value="">(トップレベル)</option>' +
-    parentOptions.map(path => `<option value="${escapeHtml(path)}">${escapeHtml(path)}</option>`).join("");
+    parentOptions.map(n => `<option value="${n.id}">${escapeHtml(wbsNodePath(state, n.id))}</option>`).join("");
 
-  if (editingTagPath) {
-    const segs = editingTagPath.split("/");
-    const name = segs.pop();
-    select.value = segs.join("/");
-    document.getElementById("tagNameInput").value = name;
-    document.getElementById("tagSubmitBtn").textContent = "更新";
-    document.getElementById("tagCancelEditBtn").style.display = "";
+  if (editingWbsNodeId) {
+    const node = wbsNodeById(state, editingWbsNodeId);
+    select.value = node.parentId || "";
+    document.getElementById("wbsNameInput").value = node.name;
+    document.getElementById("wbsSubmitBtn").textContent = "更新";
+    document.getElementById("wbsCancelEditBtn").style.display = "";
   } else {
-    document.getElementById("tagSubmitBtn").textContent = "タグを作成";
-    document.getElementById("tagCancelEditBtn").style.display = "none";
+    document.getElementById("wbsSubmitBtn").textContent = "ノードを作成";
+    document.getElementById("wbsCancelEditBtn").style.display = "none";
   }
 }
-function startTagEdit(path) {
-  editingTagPath = path;
-  renderTagsModal();
+function startWbsEdit(id) {
+  editingWbsNodeId = id;
+  renderWbsModal();
 }
-function cancelTagEdit() {
-  editingTagPath = null;
-  document.getElementById("tagNameInput").value = "";
-  renderTagsModal();
+function cancelWbsEdit() {
+  editingWbsNodeId = null;
+  document.getElementById("wbsNameInput").value = "";
+  renderWbsModal();
 }
 
 // ==== 7. イベントハンドラ ====
@@ -2627,6 +2998,129 @@ document.addEventListener("pointermove", timelinePointerMove, { passive: false }
 document.addEventListener("pointerup", timelinePointerUp);
 document.addEventListener("pointercancel", timelinePointerCancel);
 
+// ---- 7b. WBS管理モーダルの並び替えドラッグ ----
+// タイムラインのドラッグ(7a)とは独立した、もっと単純な1次元(縦方向のみ)の
+// 並び替えドラッグ。ハンドル(.wbs-drag-handle)だけがドラッグの起点で、
+// ✏️🗑✅など他のボタンとは別要素のため、タイムラインドラッグで必要だった
+// 「ドラッグ後の合成clickの抑制」(lastDragBox/lastDragEndAt)は不要
+// (ハンドル自体はdata-actionを持たないため、クリックとして処理されても
+// ディスパッチャは何もしない)。
+let wbsDragState = null;
+let wbsAutoScrollRAF = null;
+function wbsDragPointerDown(e) {
+  if (wbsDragState) return;
+  const handle = e.target.closest(".wbs-drag-handle");
+  if (!handle) return;
+  const row = handle.closest(".wbs-row");
+  const modalCard = row.closest(".modal-card");
+  const listBody = document.getElementById("wbsListBody");
+  const parentAttr = row.dataset.parentId || "";
+  const id = row.dataset.id;
+  const siblingRows = Array.from(listBody.querySelectorAll(`.wbs-row[data-parent-id="${parentAttr}"]`));
+  const originalIndex = siblingRows.findIndex(r => r.dataset.id === id);
+  if (originalIndex === -1) return;
+  const others = siblingRows.filter(r => r.dataset.id !== id)
+    .map(el => ({ id: el.dataset.id, el, top: el.getBoundingClientRect().top }));
+  wbsDragState = {
+    id, row, modalCard,
+    pointerId: e.pointerId,
+    startClientY: e.clientY,
+    lastClientY: e.clientY,
+    startScrollTop: modalCard.scrollTop,
+    rowHeight: row.getBoundingClientRect().height,
+    originalIndex,
+    currentTargetIndex: originalIndex,
+    others,
+  };
+  row.classList.add("dragging");
+  others.forEach(o => o.el.classList.add("shifting"));
+  handle.setPointerCapture(e.pointerId);
+}
+// ドラッグ中の行はポインタの移動量(+自動スクロール分)にそのまま追従させる
+// (delta方式、タイムラインドラッグと同じ考え方)。他の兄弟行は、現在の
+// 挿入先インデックス(currentTargetIndex)と各行の元のインデックスを比べ、
+// 道を空けるために前後どちらへ1行分ずれるべきかをその場で計算して
+// transformを当てる(Notion/Trello等でおなじみの「並び替え中に周りの行が
+// スッと詰まる」プレビュー)。
+function wbsDragUpdate() {
+  const ds = wbsDragState;
+  if (!ds) return;
+  const scrollDelta = ds.modalCard.scrollTop - ds.startScrollTop;
+  const deltaY = (ds.lastClientY - ds.startClientY) + scrollDelta;
+  ds.row.style.transform = `translateY(${deltaY}px)`;
+  let targetIndex = 0;
+  for (const o of ds.others) {
+    const mid = o.top + scrollDelta + ds.rowHeight / 2;
+    if (ds.lastClientY > mid) targetIndex++;
+    else break;
+  }
+  if (targetIndex !== ds.currentTargetIndex) {
+    ds.currentTargetIndex = targetIndex;
+    ds.others.forEach((o, otherIndex) => {
+      const shift = (otherIndex >= ds.currentTargetIndex ? 1 : 0) - (otherIndex >= ds.originalIndex ? 1 : 0);
+      o.el.style.transform = shift !== 0 ? `translateY(${shift * ds.rowHeight}px)` : "";
+    });
+  }
+}
+// .modal-card(一覧のスクロールコンテナ)の上端/下端付近にポインタが
+// 近づいている間、requestAnimationFrameで少しずつscrollTopを動かす
+// (タイムラインのautoScrollTickと同じ考え方の簡略版)。
+function wbsAutoScrollTick() {
+  wbsAutoScrollRAF = null;
+  const ds = wbsDragState;
+  if (!ds) return;
+  const rect = ds.modalCard.getBoundingClientRect();
+  const edge = 40, maxSpeed = 14;
+  let speed = 0;
+  if (ds.lastClientY < rect.top + edge) speed = -maxSpeed * Math.min(1, (rect.top + edge - ds.lastClientY) / edge);
+  else if (ds.lastClientY > rect.bottom - edge) speed = maxSpeed * Math.min(1, (ds.lastClientY - (rect.bottom - edge)) / edge);
+  if (speed !== 0) {
+    ds.modalCard.scrollTop = Math.max(0, ds.modalCard.scrollTop + speed);
+    wbsDragUpdate();
+  }
+  wbsAutoScrollRAF = requestAnimationFrame(wbsAutoScrollTick);
+}
+function wbsDragPointerMove(e) {
+  const ds = wbsDragState;
+  if (!ds || e.pointerId !== ds.pointerId) return;
+  e.preventDefault();
+  ds.lastClientY = e.clientY;
+  wbsDragUpdate();
+  if (!wbsAutoScrollRAF) wbsAutoScrollRAF = requestAnimationFrame(wbsAutoScrollTick);
+}
+function wbsDragFinish() {
+  const ds = wbsDragState;
+  if (!ds) return;
+  if (wbsAutoScrollRAF) { cancelAnimationFrame(wbsAutoScrollRAF); wbsAutoScrollRAF = null; }
+  ds.row.classList.remove("dragging");
+  ds.row.style.transform = "";
+  ds.others.forEach(o => { o.el.style.transform = ""; o.el.classList.remove("shifting"); });
+  wbsDragState = null;
+  return ds;
+}
+function wbsDragPointerUp(e) {
+  const ds = wbsDragState;
+  if (!ds || e.pointerId !== ds.pointerId) return;
+  const targetIndex = ds.currentTargetIndex;
+  const id = ds.id;
+  wbsDragFinish();
+  if (targetIndex === ds.originalIndex) return; // 実際に動いていなければ何もしない
+  reorderWbsNode(state, id, targetIndex);
+  saveState(state);
+  renderWbsModal();
+  if (currentView === "today") renderTodayView();
+  if (currentView === "stats") renderStatsView();
+}
+function wbsDragPointerCancel(e) {
+  const ds = wbsDragState;
+  if (!ds || e.pointerId !== ds.pointerId) return;
+  wbsDragFinish(); // state.wbsは変更していないため再描画は不要
+}
+document.addEventListener("pointerdown", wbsDragPointerDown);
+document.addEventListener("pointermove", wbsDragPointerMove, { passive: false });
+document.addEventListener("pointerup", wbsDragPointerUp);
+document.addEventListener("pointercancel", wbsDragPointerCancel);
+
 // Ctrl+Z(元に戻す)/Ctrl+Y(やり直す、Windowsの標準的なRedoショートカット)。
 // フォーム入力中(テキスト欄選択中など)はOS/ブラウザ標準の編集用Undoに
 // 譲るため、またモーダル編集中に裏のタスク一覧が変わると混乱するため、
@@ -2766,10 +3260,43 @@ document.addEventListener("click", (e) => {
       renderTodayView();
       break;
     }
-    case "edit-tag-chip:toggle": {
-      const tag = btn.dataset.tag;
-      if (taskFormTags.has(tag)) taskFormTags.delete(tag); else taskFormTags.add(tag);
-      btn.classList.toggle("selected");
+    case "wbs-picker:select": {
+      setTaskFormWbsNode(btn.dataset.id);
+      renderEditWbsPicker();
+      break;
+    }
+    case "wbs-picker:quick-add": {
+      const name = document.getElementById("editWbsSearchInput").value;
+      const parentSelect = document.getElementById("editWbsQuickAddParentSelect");
+      const parent = parentSelect ? (parentSelect.value || null) : null;
+      try {
+        const node = addWbsNode(state, parent, name);
+        saveState(state);
+        setTaskFormWbsNode(node.id);
+        renderEditWbsPicker();
+      } catch (err) {
+        alert(err.message);
+      }
+      break;
+    }
+    // タスク編集モーダルの「🌳 WBSから選択」ボタン。モーダルは同時に
+    // 1つしか開けないため、タスク編集モーダルは状態(editingTaskId等)も
+    // DOM上の入力値(時刻・備考)も保ったまま隠すだけにし、WBS管理モーダルを
+    // 選択モードで開く。
+    case "wbs-picker:open-full": {
+      document.getElementById("taskEditModal").classList.add("hidden");
+      wbsPickerReturnActive = true;
+      openWbsModal();
+      break;
+    }
+    // WBS管理モーダル(選択モード)の✅から、選んだノードを反映してタスク
+    // 編集モーダルへ戻る。
+    case "wbs-picker:pick": {
+      setTaskFormWbsNode(btn.dataset.id);
+      wbsPickerReturnActive = false;
+      closeWbsModal();
+      document.getElementById("taskEditModal").classList.remove("hidden");
+      renderEditWbsPicker();
       break;
     }
     case "date:prev": selectedDate = addDays(selectedDate, -1); renderCurrentDateView(); break;
@@ -2792,23 +3319,32 @@ document.addEventListener("click", (e) => {
       closeCalendar();
       renderCurrentDateView();
       break;
-    case "tags:open": openTagsModal(); break;
-    case "tags:close": closeTagsModal(); break;
-    case "tags:add": {
-      const parent = document.getElementById("tagParentSelect").value;
-      const name = document.getElementById("tagNameInput").value;
+    case "wbs:open": openWbsModal(); break;
+    case "wbs:close": {
+      closeWbsModal();
+      // タスク編集モーダルの「🌳 WBSから選択」経由で開いていた場合、
+      // 選択を変えずに(リネーム・削除だけして)✕で戻るケースに対応する。
+      if (wbsPickerReturnActive) {
+        wbsPickerReturnActive = false;
+        document.getElementById("taskEditModal").classList.remove("hidden");
+        renderEditWbsPicker();
+      }
+      break;
+    }
+    case "wbs:add": {
+      const parent = document.getElementById("wbsParentSelect").value || null;
+      const name = document.getElementById("wbsNameInput").value;
       try {
-        if (editingTagPath) {
-          const newPath = buildTagPath(parent, name);
-          renameTagCascade(state, editingTagPath, newPath);
-          editingTagPath = null;
+        if (editingWbsNodeId) {
+          renameWbsNode(state, editingWbsNodeId, parent, name);
+          editingWbsNodeId = null;
         } else {
-          addTagDefinition(state, parent, name);
+          addWbsNode(state, parent, name);
         }
         saveState(state);
-        document.getElementById("tagNameInput").value = "";
-        renderTagsModal();
-        // タスク作成/編集モーダルはタグ管理モーダルと排他的にしか開けない
+        document.getElementById("wbsNameInput").value = "";
+        renderWbsModal();
+        // タスク作成/編集モーダルはWBS管理モーダルと排他的にしか開けない
         // ため、その場のフォーム入力を気にせず現在表示中のタブだけ
         // 再描画すればよい(非表示のタブは次の切り替えで作り直される)。
         if (currentView === "today") renderTodayView();
@@ -2818,36 +3354,54 @@ document.addEventListener("click", (e) => {
       }
       break;
     }
-    case "stats:tag-filter-toggle": {
-      const tag = btn.dataset.tag;
-      if (statsTagFilter.has(tag)) statsTagFilter.delete(tag); else statsTagFilter.add(tag);
+    case "stats:toggle-collapse": {
+      const id = btn.dataset.id;
+      if (statsExpandedNodeIds.has(id)) statsExpandedNodeIds.delete(id); else statsExpandedNodeIds.add(id);
       renderStatsView();
       break;
     }
-    case "tags:edit-start": startTagEdit(btn.dataset.tag); break;
-    case "tags:cancel-edit": cancelTagEdit(); break;
-    case "tags:delete": {
-      const path = btn.dataset.tag;
-      const targets = state.tags.filter(t => t === path || t.startsWith(path + "/"));
-      const taskCount = countTasksUsingTags(state, targets);
-      const msg = targets.length > 1
-        ? `「${tagChipLabel(path)}」とその下位タグ${targets.length - 1}件(使用中のタスク${taskCount}件)を削除しますか?`
-        : `「${tagChipLabel(path)}」を削除しますか?(使用中のタスク${taskCount}件)`;
-      if (confirm(msg)) {
-        removeTagCascade(state, path);
-        if (editingTagPath && (editingTagPath === path || editingTagPath.startsWith(path + "/"))) {
-          editingTagPath = null; // 編集中のタグ自身が削除された場合は編集モードを抜ける
-        }
-        saveState(state);
-        renderTagsModal();
-        if (currentView === "today") renderTodayView();
-        if (currentView === "stats") renderStatsView();
-      }
+    case "stats:toggle-collapse-all": {
+      const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs));
+      const allExpanded = idsWithChildren.length > 0 && idsWithChildren.every(id => statsExpandedNodeIds.has(id));
+      if (allExpanded) statsExpandedNodeIds.clear();
+      else idsWithChildren.forEach(id => statsExpandedNodeIds.add(id));
+      renderStatsView();
       break;
     }
-    case "title-history:pick": {
-      const titleInput = document.getElementById("editTaskTitle");
-      if (titleInput) titleInput.value = btn.dataset.title;
+    case "wbs:toggle-collapse": {
+      const id = btn.dataset.id;
+      if (wbsCollapsedNodeIds.has(id)) wbsCollapsedNodeIds.delete(id); else wbsCollapsedNodeIds.add(id);
+      renderWbsModal();
+      break;
+    }
+    case "wbs:edit-start": startWbsEdit(btn.dataset.id); break;
+    case "wbs:cancel-edit": cancelWbsEdit(); break;
+    case "wbs:delete": {
+      const targetId = btn.dataset.id;
+      const node = wbsNodeById(state, targetId);
+      if (!node) break;
+      const children = wbsChildren(state, targetId);
+      const selfCount = countTasksUsingWbsNode(state, targetId);
+      if (!confirm(`「${node.name}」を削除しますか?(使用中のタスク${selfCount}件)`)) break;
+      let cascade = "promote";
+      if (children.length) {
+        const descCount = wbsDescendantIds(state, targetId)
+          .reduce((sum, tid) => sum + countTasksUsingWbsNode(state, tid), 0);
+        cascade = confirm(
+          `子ノードが${children.length}件あります。\n` +
+          `OK: 配下ごと削除(配下の使用中タスク${descCount}件を含む)\n` +
+          `キャンセル: このノードだけ削除(子はルート方向へ繰り上げ)`
+        ) ? "subtree" : "promote";
+      }
+      deleteWbsNode(state, targetId, { cascade });
+      if (editingWbsNodeId && (editingWbsNodeId === targetId
+          || (cascade === "subtree" && isWbsDescendantOf(state, editingWbsNodeId, targetId)))) {
+        editingWbsNodeId = null; // 編集中のノード自身が削除された場合は編集モードを抜ける
+      }
+      saveState(state);
+      renderWbsModal();
+      if (currentView === "today") renderTodayView();
+      if (currentView === "stats") renderStatsView();
       break;
     }
     case "start-focus": {
@@ -2893,6 +3447,13 @@ document.addEventListener("click", (e) => {
     case "settings-open": openSettings(); break;
     case "settings-close": closeSettings(); break;
     case "settings-save": saveSettingsFromForm(); break;
+    case "settings:clear-all-data": {
+      if (confirm("すべてのデータ(タスク・WBS・設定・実績記録)を削除します。この操作は取り消せません。よろしいですか?")) {
+        localStorage.removeItem(STORAGE_KEY);
+        location.reload();
+      }
+      break;
+    }
   }
 });
 document.addEventListener("change", (e) => {
@@ -2924,6 +3485,19 @@ document.addEventListener("change", (e) => {
     renderFocusView();
   } else if (el.id === "importFile") {
     handleImportFile(el.files[0]);
+  } else if (el.id === "editWbsQuickAddParentSelect") {
+    // ユーザーが明示的に親を選び直した場合も、名前欄の値はそのままに
+    // wbsQuickAddParentIdと重複判定/作成ボタンの活性状態だけ更新する。
+    wbsQuickAddParentId = el.value || null;
+    renderWbsSearchResults(document.getElementById("editWbsSearchInput").value.trim());
+  }
+});
+// タスク編集モーダルのWBS検索欄だけ、入力のたびに(change=フォーカスが
+// 外れた時ではなく)候補を更新したいため専用のinputリスナーを設ける。
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.id === "editWbsSearchInput") {
+    renderWbsSearchResults(el.value.trim());
   }
 });
 document.addEventListener("visibilitychange", () => {
