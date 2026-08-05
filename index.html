@@ -60,6 +60,11 @@
        一つになっていた。選択して初めて見える領域なので、はっきり色を
        付けて存在をアピールする。 */
     --resize-handle-bg: rgba(37, 99, 235, 0.16);
+    /* タイムラインの時刻の罫線専用色。--borderは他の枠線(カード・入力欄等)
+       と共用の控えめな色だが、そのままタイムラインの罫線に使うと薄すぎて
+       目立たないという指摘を受けたため、罫線用に少し濃いトーンを別途
+       用意する。 */
+    --timeline-grid: #c7cbd4;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -79,6 +84,7 @@
       --heat-3: #3f7cc2;
       --heat-4: #4f8bff;
       --resize-handle-bg: rgba(79, 139, 255, 0.24);
+      --timeline-grid: #3c4453;
     }
   }
   *, *::before, *::after { box-sizing: border-box; }
@@ -258,9 +264,9 @@
      参照)。日付ナビ・バナーは#appHeader(画面幅いっぱい)側にあるため、
      このタイムライン部分だけが中央の列として収まる形になる。 */
   .timeline-wrap { position: relative; margin: 12px auto 24px; max-width: var(--timeline-col-max-width); }
-  .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
+  .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--timeline-grid); }
   .timeline-hour-label {
-    position: absolute; left: 0; top: -8px; font-size: 12px; color: var(--text-muted);
+    position: absolute; left: 0; top: -8px; font-size: 13px; color: var(--text-muted);
     background: var(--bg); padding-right: 4px;
   }
   .timeline-now-line { position: absolute; left: 48px; right: 0; height: 2px; background: var(--danger); z-index: 5; }
@@ -687,7 +693,7 @@
           <input type="number" id="settingsBreakMinutes" min="1" max="30">
         </label>
         <label class="field">
-          <span>継続日カウントの閾値(この数以上タスクを完了した日を継続日とする)</span>
+          <span>継続日とみなす完了タスク数の閾値</span>
           <input type="number" id="settingsStreakThreshold" min="1" max="20">
         </label>
         <button class="btn primary" data-action="settings-save">設定を保存</button>
@@ -702,7 +708,7 @@
         </div>
         <hr>
         <div class="field">
-          <span>すべてのタスク・WBS・設定・実績記録を端末から削除します(元に戻せません)</span>
+          <span>全データを端末から削除します(元に戻せません)</span>
           <button class="btn danger-outline" data-action="settings:clear-all-data"><svg class="icon"><use href="#icon-delete"></use></svg> 全データを削除</button>
         </div>
         <hr>
@@ -792,7 +798,7 @@ const SCHEMA_VERSION = 6;
 // 末尾に表示するためだけに存在する。「実機で開いているものが最新の
 // 更新版にちゃんと差し変わっているか」を確認する手段が無かった、という
 // 指摘を受けて追加した。
-const APP_VERSION = "2026-08-05.1";
+const APP_VERSION = "v1.0.0";
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
