@@ -792,7 +792,7 @@ const SCHEMA_VERSION = 6;
 // 末尾に表示するためだけに存在する。「実機で開いているものが最新の
 // 更新版にちゃんと差し変わっているか」を確認する手段が無かった、という
 // 指摘を受けて追加した。
-const APP_VERSION = "v1.0.0";
+const APP_VERSION = "v1.1.0";
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
@@ -1471,6 +1471,20 @@ function finishSession(elapsedMinutes) {
   state.activeSession = null;
   saveState(state); renderAll();
 }
+// 休憩明けに次の集中ブロックへ自動で繋げてよいか。タスクの計画ブロック数
+// (plannedPomodoros、タスクの所要時間から逆算した目安)にまだ達していない
+// 間だけ自動連結し、達した後・タスクが完了チェック済みになった後・
+// タスク自体が(削除等で)無くなった後は自動連結せず、そこで一旦止めて
+// ユーザーの判断に委ねる(際限なく回り続けて放置されるのを避けるため)。
+// なお集中→休憩の自動遷移(completeSession内のfocus分岐)は元々あり、
+// 「複数ポモドーロの自動連結が無い」という既知の制約は休憩→次の集中の
+// 遷移だけが手動だったことを指していた。
+function shouldAutoContinuePomodoro(session) {
+  const task = getEntryForDate(session.dayKey).tasks.find(t => t.id === session.taskId);
+  if (!task || task.completed) return false;
+  const blocksDone = Math.round(task.actualMinutes / state.settings.focusMinutes);
+  return blocksDone < task.plannedPomodoros;
+}
 function completeSession() {
   const session = state.activeSession;
   if (!session) return;
@@ -1482,6 +1496,12 @@ function completeSession() {
     state.activeSession = {
       taskId: session.taskId, dayKey: session.dayKey, kind: "break",
       endAt: Date.now() + state.settings.breakMinutes * 60000,
+      paused: false, pausedRemainingMs: null,
+    };
+  } else if (shouldAutoContinuePomodoro(session)) {
+    state.activeSession = {
+      taskId: session.taskId, dayKey: session.dayKey, kind: "focus",
+      endAt: Date.now() + state.settings.focusMinutes * 60000,
       paused: false, pausedRemainingMs: null,
     };
   } else {
@@ -2420,6 +2440,14 @@ function renderFocusView({ resetScroll = false } = {}) {
     const task = sessionTask;
     const blocksDone = task ? Math.round(task.actualMinutes / state.settings.focusMinutes) : 0;
     const blocksTotal = task ? task.plannedPomodoros : 0;
+    // 休憩中は「このまま放っておくと次にどうなるか」が分かるよう、
+    // 自動連結の有無をヒントとして出す(shouldAutoContinuePomodoroは
+    // completeSession側の実際の判定とロジックを共有している)。
+    const breakContinueHint = (session.kind === "break" && task)
+      ? (shouldAutoContinuePomodoro(session)
+        ? '<div class="timer-hint">休憩が終わると自動的に次の集中ブロックが始まります</div>'
+        : '<div class="timer-hint">計画ブロック数に達したため、休憩後は自動的に停止します</div>')
+      : "";
     timerHtml = `
       <div class="timer-phase">${phase}${task ? "・" + escapeHtml(wbsNodeName(state, task.wbsNodeId)) : ""}</div>
       <div class="timer-display">${formatMMSS(remaining)}</div>
@@ -2430,6 +2458,7 @@ function renderFocusView({ resetScroll = false } = {}) {
           : '<button class="btn" data-action="pause">一時停止</button>'}
         <button class="btn danger-outline" data-action="finish">終了</button>
       </div>
+      ${breakContinueHint}
       ${session.paused && !sessionTaskOtherDay ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}
       ${sessionTaskOtherDay ? '<div class="timer-hint">表示中の日付とは別の日のタスクのため、他のタスクへの切り替えはできません。先に「終了」してください。</div>' : ""}`;
   } else {
