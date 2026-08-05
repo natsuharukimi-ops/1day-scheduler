@@ -71,22 +71,32 @@
     color: var(--text);
     -webkit-tap-highlight-color: transparent;
   }
-  /* iPad miniのホーム画面追加(スタンドアロン表示)で初回起動した直後だけ、
-     フッタ(.tabbar)が実際の画面下端より少し上にずれて表示され、スクロール
-     すると直る、という実機での報告があった(WebKitのスタンドアロン起動直後は
-     100vh/100dvhの解決値が実際のビジュアルビューポートにまだ追いついて
-     いないことがある既知の癖、という理解)。height:100vh/100dvhでの高さ指定
-     をやめ、position:fixed+inset:0で常に実際のビューポート矩形に追従させる
-     方式にした(dvhのような単位の「初回だけ古い値になりうる」問題を避けられる)。
-     この端末固有の不具合は自動検証手段が無く実機でしか確認できないため
-     (CLAUDE.md「GUIの自動検証について」参照)、この修正が実際に直っているかは
-     未検証。直っていなければ別のアプローチ(JSでwindow.innerHeightを都度
-     計測してCSS変数に反映する等)を検討する。 */
+  /* iPad miniのホーム画面追加(スタンドアロン表示)で開いた時だけ、フッタ
+     (.tabbar)が実際の画面下端より少し上にずれて表示される、という実機での
+     報告があった。最初はheight:100vh/100dvhの「初回だけ解決値が古い」癖と
+     見て、position:fixed+inset:0(常に実ビューポート矩形に追従)に変更した
+     が、これでも直らず、しかも以前は効いていた「スクロールすると直る」も
+     効かなくなったとの報告を受けた。あわせて「右下にウィンドウリサイズ用の
+     ハンドルが出る」という観察も得られ、これは通常のフルスクリーンPWA表示
+     では起きないため、iPadOSのStage Manager等でウィンドウ表示されている
+     可能性が高いと判断した。ウィンドウ表示だと、position:fixedの
+     inset:0が実際に合わせる先(レイアウトビューポート)と、実際に見えている
+     領域(ウィンドウの矩形)がズレたままになり、スクロールのような
+     再計算のきっかけでは直らない、という説明がつく。そのため、CSSの
+     ビューポート単位に頼らずwindow.visualViewport(実際に見えている領域を
+     直接返すAPI)をJSで測って高さをCSS変数に反映する方式に切り替えた
+     (下記のupdateAppHeight参照)。原因がStage Managerであっても他の要因で
+     あっても、「今実際に見えている高さ」に常に追従させることで対応できる
+     はず、という考え方。この端末固有の不具合は自動検証手段が無く実機でしか
+     確認できないため(CLAUDE.md「GUIの自動検証について」参照)、この修正が
+     実際に直っているかは未検証。 */
   #app {
     display: flex;
     flex-direction: column;
     position: fixed;
-    inset: 0;
+    top: 0; left: 0; right: 0;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
     overflow: hidden;
   }
   /* アプリ全体の常時表示ヘッダー。以前はタイトルバー(.app-header)と
@@ -3686,6 +3696,29 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ==== 8. 初期化 ====
+// #appの高さをCSSのvh/dvh単位に任せず、window.visualViewport(実際に見えて
+// いる領域を返すAPI)を都度measureしてCSS変数--app-heightに反映する。
+// iPad miniのホーム画面追加(スタンドアロン表示)で開いた時だけフッタが
+// 画面下端より少し上にずれる不具合(#app CSSのコメント参照)への対応で、
+// Stage Manager等のウィンドウ表示ではposition:fixed;inset:0がレイアウト
+// ビューポートとウィンドウの実際の矩形のズレを拾ってしまい直らない、
+// という推測に基づく。visualViewportが無い(古い)環境ではwindow.innerHeightに
+// フォールバックする。resize/scrollイベントの両方を購読するのは、
+// visualViewportの変化はresizeだけでなくscroll(ズームや動的ツールバーの
+// 出入りに伴う可視領域の移動)でも起こりうるため。
+function updateAppHeight() {
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${h}px`);
+}
+updateAppHeight();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", updateAppHeight);
+  window.visualViewport.addEventListener("scroll", updateAppHeight);
+}
+window.addEventListener("orientationchange", updateAppHeight);
+window.addEventListener("resize", updateAppHeight);
+
 let state = loadState();
 {
   const rollover = rolloverIfNeeded(state);
