@@ -3717,13 +3717,25 @@ document.addEventListener("visibilitychange", () => {
 // #appの高さをCSSのvh/dvh単位に任せず、window.visualViewport(実際に見えて
 // いる領域を返すAPI)を都度measureしてCSS変数--app-heightに反映する。
 // iPad miniのホーム画面追加(スタンドアロン表示)で開いた時だけフッタが
-// 画面下端より少し上にずれる不具合(#app CSSのコメント参照)への対応で、
-// Stage Manager等のウィンドウ表示ではposition:fixed;inset:0がレイアウト
-// ビューポートとウィンドウの実際の矩形のズレを拾ってしまい直らない、
-// という推測に基づく。visualViewportが無い(古い)環境ではwindow.innerHeightに
-// フォールバックする。resize/scrollイベントの両方を購読するのは、
-// visualViewportの変化はresizeだけでなくscroll(ズームや動的ツールバーの
-// 出入りに伴う可視領域の移動)でも起こりうるため。
+// 画面下端より少し上にずれる不具合(#app CSSのコメント参照)への対応。
+// visualViewportが無い(古い)環境ではwindow.innerHeightにフォールバックする。
+// 以前はvisualViewportの"scroll"イベントも購読していたが、これがiPadの
+// タイムラインで「上端/下端まで送った後、逆方向にスクロールしようとすると
+// 一時的に画面が固まる(しばらくすると直る)」という実際に踏んだ不具合の
+// 原因だった: "scroll"はページのスクロール位置とは別に、iOSのラバー
+// バンド(端まで届いた後の伸び戻りアニメーション)中にもvisualViewportの
+// 見た目上のオフセット/サイズが一時的に変動するたびに発火する。この
+// 発火のたびに#appの高さ(--app-height)を書き換えていたため、ラバー
+// バンド中に#appが一瞬縮み、その分だけ.tabbar(フッタ、スクロールしない
+// 固定領域)が指の位置まで押し上がってきて、続く逆方向のスクロール操作が
+// 実際にはタイムライン(main)ではなくフッタに当たってしまい反応しない、
+// という現象になっていたと考えられる(ユーザーからの「見えない領域が
+// 前面に出てきてそれを触っているのでは」という推測と一致する)。
+// visualViewportの"resize"(ブラウザのツールバー表示/非表示や
+// キーボード開閉など、実際にビューポートの寸法そのものが変わる場合に
+// 発火し、ラバーバンド中の一時的な変動では発火しない)だけを購読すれば
+// 元々の目的(フッタが画面下端に届かない不具合への対応)には十分なため、
+// "scroll"の購読はやめた。
 function updateAppHeight() {
   const vv = window.visualViewport;
   const h = vv ? vv.height : window.innerHeight;
@@ -3732,7 +3744,6 @@ function updateAppHeight() {
 updateAppHeight();
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", updateAppHeight);
-  window.visualViewport.addEventListener("scroll", updateAppHeight);
 }
 window.addEventListener("orientationchange", updateAppHeight);
 window.addEventListener("resize", updateAppHeight);
