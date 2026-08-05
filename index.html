@@ -2,10 +2,28 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<!-- viewport-fit=coverと apple-mobile-web-app-status-bar-style=black-translucent
+     (コンテンツをステータスバー/ホームインジケーター領域まで描画し、
+     env(safe-area-inset-*)で自前で避ける「端まで描画」構成)を外した。
+     iPad miniのホーム画面追加(スタンドアロン表示)で、フッタが画面下端に
+     届かず隙間ができる不具合の実機報告があり、position:fixed;inset:0や
+     window.visualViewportベースの対応(index.html内の#app関連コメント参照)
+     を試しても直らなかった。「ダイアログを開いた時の背景の暗転がその隙間
+     まで届かない」ことから、隙間がそもそもWebページ側から見えている
+     ビューポートの外側にあると分かり、Webページ内のCSS/JSでは対処できない
+     可能性が高いと判断した。「開いた瞬間だけホームインジケーターの横棒が
+     一瞬見える」という報告もあわせると、ホームインジケーター領域(画面下端
+     の安全域)の扱いが怪しいため、「端まで描画してenv()で自前で避ける」
+     構成自体をやめ、OS側に安全域の確保を任せる標準的な構成に戻す実験を
+     している。env(safe-area-inset-*)を使っている箇所(.app-header/.tabbar/
+     .timeline-add-fab/.modal-card)は、viewport-fit=coverが無いとこれらの
+     値が仕様上0になるだけで、コード自体は変更不要(自然に無効化される)。
+     この実機でしか確認できない不具合への対応が続いているため、この変更で
+     直ったかどうかは検証できるまで不明(CLAUDE.md参照)。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>1day scheduler</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="1day">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#2563eb">
