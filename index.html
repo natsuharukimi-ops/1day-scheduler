@@ -60,11 +60,6 @@
        一つになっていた。選択して初めて見える領域なので、はっきり色を
        付けて存在をアピールする。 */
     --resize-handle-bg: rgba(37, 99, 235, 0.16);
-    /* タイムラインの時刻の罫線専用色。--borderは他の枠線(カード・入力欄等)
-       と共用の控えめな色だが、そのままタイムラインの罫線に使うと薄すぎて
-       目立たないという指摘を受けたため、罫線用に少し濃いトーンを別途
-       用意する。 */
-    --timeline-grid: #c7cbd4;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -84,7 +79,6 @@
       --heat-3: #3f7cc2;
       --heat-4: #4f8bff;
       --resize-handle-bg: rgba(79, 139, 255, 0.24);
-      --timeline-grid: #3c4453;
     }
   }
   *, *::before, *::after { box-sizing: border-box; }
@@ -264,7 +258,7 @@
      参照)。日付ナビ・バナーは#appHeader(画面幅いっぱい)側にあるため、
      このタイムライン部分だけが中央の列として収まる形になる。 */
   .timeline-wrap { position: relative; margin: 12px auto 24px; max-width: var(--timeline-col-max-width); }
-  .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--timeline-grid); }
+  .timeline-hour-row { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
   .timeline-hour-label {
     position: absolute; left: 0; top: -8px; font-size: 13px; color: var(--text-muted);
     background: var(--bg); padding-right: 4px;
