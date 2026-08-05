@@ -2393,7 +2393,7 @@ function renderFocusView({ resetScroll = false } = {}) {
     const doneMark = t.completed ? "✓ " : "";
     const otherDayMark = (sessionTaskOtherDay && t.id === session.taskId)
       ? `(${formatJapaneseDate(dayKeyToDate(session.dayKey))}から継続) ` : "";
-    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${otherDayMark}${escapeHtml(wbsNodeName(state, t.wbsNodeId))}</option>`;
+    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${otherDayMark}${escapeHtml(wbsNodePath(state, t.wbsNodeId))}</option>`;
   }).join("");
 
   let timerHtml;
