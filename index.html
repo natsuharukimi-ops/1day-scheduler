@@ -1710,6 +1710,23 @@ function buildWbsTree(nodes) {
   }));
   return build(null);
 }
+// タスク編集モーダル・WBS管理モーダルの親ノード選択<select>は、以前は
+// nodes(=state.wbs)の生の配列順で選択肢を並べていたが、これはWBSツリー
+// 表示の順序(buildWbsTreeが辿る、親子関係を考慮した深さ優先順)とは
+// 一致しない(兄弟が別の親の下のノードと配列上で入り乱れているため)。
+// buildWbsTreeの結果を深さ優先で単純に平坦化するだけで、ツリー表示と
+// 同じ順序の一覧を得られる。
+function flattenWbsTreeOrder(nodes) {
+  const result = [];
+  const walk = list => {
+    for (const n of list) {
+      result.push(n);
+      walk(n.children);
+    }
+  };
+  walk(buildWbsTree(nodes));
+  return result;
+}
 // renderRow(node, guides, isLast, isRoot)を各ノードについて呼ぶ。
 // - guides: 祖先(ルート直下から自分の親まで)各階層について「まだ後続の
 //   兄弟があるか」を表す真偽値の配列。ルート自身の枝は表示しない方針
@@ -2079,7 +2096,7 @@ function renderWbsSearchResults(query) {
       </span>
     </div>`;
   }).join("");
-  const parentOptions = state.wbs.filter(n => !n.deleted);
+  const parentOptions = flattenWbsTreeOrder(state.wbs.filter(n => !n.deleted));
   // 親ノードの選択は、前回このミニフォームで(または既存ノードの選択で)
   // 使われたwbsQuickAddParentIdを引き継ぐ(トップレベルへは戻さない)。
   // 参照先が既に無い場合だけトップレベルへフォールバックする。
@@ -2803,7 +2820,7 @@ function renderWbsModal() {
   // 編集中のノード自身とその配下、およびtombstone化したノードは親候補から除外する
   // (前者は循環参照を防ぐため、後者は削除済みノードの下に新たに作らせないため)。
   const excludedIds = editingWbsNodeId ? [editingWbsNodeId, ...wbsDescendantIds(state, editingWbsNodeId)] : [];
-  const parentOptions = state.wbs.filter(n => !n.deleted && !excludedIds.includes(n.id));
+  const parentOptions = flattenWbsTreeOrder(state.wbs.filter(n => !n.deleted && !excludedIds.includes(n.id)));
   const select = document.getElementById("wbsParentSelect");
   select.innerHTML = '<option value="">(トップレベル)</option>' +
     parentOptions.map(n => `<option value="${n.id}">${escapeHtml(wbsNodePath(state, n.id))}</option>`).join("");
