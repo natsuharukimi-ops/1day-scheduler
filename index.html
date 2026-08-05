@@ -120,16 +120,47 @@
   .icon-btn.danger { color: var(--danger); }
   .icon-btn:disabled { opacity: 0.35; cursor: default; }
   .icon-btn:disabled:active { background: transparent; }
-  /* 絵文字ではない記号だけのグリフ(◀▶↶↷等)は、透明背景+グリフの線の
-     太さだけに視認性を頼るとライト/ダーク双方で見づらくなる(日付ナビの
-     ◀▶📅→.date-nav-btn、設定の閉じるボタン→.modal-close-btnで既に
-     同じ指摘を受けて対応済み。新しく記号グリフのアイコンボタンを追加する
-     時は必ずこのクラスを付けて背景+枠線付きの円で囲むこと)。 */
+  /* 単色の線画アイコン(下記.icon参照)は、透明背景+線の太さだけに視認性を
+     頼るとライト/ダーク双方で見づらくなる(日付ナビの◀▶📅→.date-nav-btn、
+     設定の閉じるボタン→.modal-close-btnで既に同じ指摘を受けて対応済み)。
+     以前は「絵文字ではない記号グリフだけ」に付けるクラスだったが、絵文字を
+     全廃してすべてSVGピクトグラムに統一したため、アイコン単体のボタンは
+     基本的にすべてこのクラスで背景+枠線付きの円を付ける(テキスト併記の
+     ボタン(.btn)やタブバーのアイコンはその親要素側で見た目が成立するため
+     対象外)。 */
   .glyph-icon-btn {
     background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);
     border-radius: 50%;
   }
   .glyph-icon-btn:active { background: var(--border); }
+  /* SVGスプライトアイコン共通スタイル(bodyの<symbol>群参照)。width/height:1em
+     で親要素のfont-sizeにそのまま追従するため、既存の各ボタンのサイズ調整
+     (.icon-btn 20px、.date-nav-btn 16px、.modal-close-btn 26px等)を変えずに
+     絵文字→線画ピクトグラムへ置き換えられる。fill/strokeはSVGの継承
+     プロパティなので<use>が参照する<symbol>内部にも(個々の要素が独自に
+     presentation属性で上書きしない限り)伝わる。 */
+  .icon {
+    width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em;
+    fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
+  }
+  /* 向き違い(prev/next、行トグル▶/▼、タイムライン展開ヒント⌃/⌄)は
+     icon-chevron 1つを回転させて使い回す。以前は▶▼(行トグル。展開中=▼
+     下向き)と▴▾(全展開/全折りたたみ。全展開中=▴上向き)で「展開中に
+     見せる向き」がバラバラだったため、統一時に「展開中/押すと閉じる=
+     下向き、折りたたみ中/押すと開く=右向き」に規約を揃えた。
+     全展開/全折りたたみボタン(タイムライン・実績・WBS管理の3箇所)だけは
+     icon-chevronの回転ではなく、icon-unfold-more(折りたたみ中/押すと
+     全展開。矢印が互いに離れる形)とicon-unfold-less(展開中/押すと
+     全折りたたみ。矢印が互いに近づく形)という2つの別アイコンを状態に
+     応じて出し分ける。同じicon-chevronを回転させるだけの見た目だと
+     日付ナビの◀▶(.date-nav-btnで同じ円形サイズ)と紛らわしい、という
+     指摘を受けたため、単一矢印の回転ではなく「矢印同士の向きの関係」で
+     意味を作る方式(Material Designのunfold_more/unfold_lessと同じ考え方)
+     に変えて視覚的に区別している。 */
+  .icon-rotate-down { transform: rotate(90deg); }
+  .icon-rotate-up { transform: rotate(-90deg); }
+  .icon-rotate-left { transform: rotate(180deg); }
 
   main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
 
@@ -339,6 +370,14 @@
     background: var(--bg-elevated); width: 100%; max-width: 560px; border-radius: 18px;
     padding: 20px; padding-bottom: max(20px, env(safe-area-inset-bottom)); max-height: 80vh; overflow-y: auto;
   }
+  /* WBS管理モーダルだけはmax-heightではなく固定heightにする。他のモーダルは
+     中身が静的だが、ここはノードの折りたたみ/展開のたびに一覧の高さが
+     変わる。max-heightのままだと展開/折りたたみのたびにカード自体の
+     高さが伸縮し、.modal側のalign-items:centerで縦方向に再センタリングされ
+     てダイアログの大きさ・位置がガタつく、という指摘を受けた。常に80vhで
+     固定することで、開閉操作では内部のスクロール量だけが変わり、カード
+     自体の大きさ・位置は変わらないようにした。 */
+  #wbsModal .modal-card { height: 80vh; }
   .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
   .modal-header h2 { margin: 0; font-size: 21px; }
   .modal-close-btn {
@@ -449,9 +488,9 @@
   /* 折りたたみトグル。子を持たないノードにも同じ幅の空スロット
      (.wbs-toggle-slotのみ)を確保し、子の有無によらず名前の開始位置を
      揃える(ファイルツリーでファイル行にだけ空チェブロン分の余白がある
-     のと同じ考え方)。▶▼は絵文字ではない記号グリフのため、他の記号
-     アイコン(◀▶等)と同じく.glyph-icon-btn(背景+枠線の円)を流用しつつ、
-     行の中に収まるよう.icon-btnの最小サイズ(44px)だけ小さく上書きする。 */
+     のと同じ考え方)。icon-chevron(SVG)を他の記号アイコンと同じく
+     .glyph-icon-btn(背景+枠線の円)を流用しつつ、行の中に収まるよう
+     .icon-btnの最小サイズ(44px)だけ小さく上書きする。 */
   .wbs-toggle-slot { flex-shrink: 0; width: 26px; height: 26px; margin-right: 4px; }
   .wbs-toggle-btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -499,6 +538,70 @@
 </style>
 </head>
 <body>
+<!-- アイコンスプライト。絵文字(🌳⚙️✏️🗑等)はUnicode上ほとんどが絵文字専用
+     コードポイントでモノクロのtext-presentationが存在せず、CSSで色・線幅を
+     制御できずテーマにも追従しないため、単色線画のSVGピクトグラムに統一
+     した(「アイコンや絵文字をピクトグラム的な表現に変えられないか」という
+     要望+「既に記号のようなものも含めて統一感を出してほしい」という指摘を
+     受けて対応)。ここで<symbol>として1回だけ定義し、呼び出し側は
+     <svg class="icon"><use href="#icon-xxx"></use></svg>で参照する(静的HTML
+     ・JSテンプレート文字列のどちらからでもid参照なので問題なく使える)。
+     向き違い(prev/next、行トグル▶/▼等)はicon-chevron 1つをCSSの
+     transform:rotate()で使い回している(全展開/全折りたたみボタンは
+     日付ナビ▶◀と見分けが付くよう、矢印同士の向きの関係で意味を作る
+     icon-unfold-more/icon-unfold-lessを使う)。 -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="icon-unfold-more" viewBox="0 0 24 24"><path d="M7 9l5-5 5 5"/><path d="M7 15l5 5 5-5"/></symbol>
+  <symbol id="icon-unfold-less" viewBox="0 0 24 24"><path d="M7 5l5 5 5-5"/><path d="M7 19l5-5 5 5"/></symbol>
+  <symbol id="icon-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="icon-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+  <symbol id="icon-tree" viewBox="0 0 24 24">
+    <path d="M12 7.3V12M12 12H6v4.7M12 12h6v4.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="12" cy="5" r="2.3" fill="currentColor" stroke="none"/>
+    <circle cx="6" cy="19" r="2.3" fill="currentColor" stroke="none"/>
+    <circle cx="18" cy="19" r="2.3" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="icon-settings" viewBox="0 0 24 24">
+    <path fill-rule="evenodd" fill="currentColor" stroke="none" d="M5.5 12A6.5 6.5 0 1 0 18.5 12A6.5 6.5 0 1 0 5.5 12Z M9 12A3 3 0 1 0 15 12A3 3 0 1 0 9 12Z"/>
+    <g fill="currentColor" stroke="none">
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(45 12 12)"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(90 12 12)"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(135 12 12)"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(180 12 12)"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(225 12 12)"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(270 12 12)"/>
+      <rect x="10.5" y="1.6" width="3" height="3.4" rx="0.8" transform="rotate(315 12 12)"/>
+    </g>
+  </symbol>
+  <symbol id="icon-edit" viewBox="0 0 24 24"><path d="M4 20l1-4.5L15.5 5 19 8.5 8.5 19 4 20Z"/><path d="M13 7l4 4"/></symbol>
+  <symbol id="icon-delete" viewBox="0 0 24 24"><path d="M5 7h14M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="icon-schedule" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+  <symbol id="icon-stats" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <rect x="4" y="13" width="4" height="7" rx="1"/><rect x="10" y="8" width="4" height="12" rx="1"/><rect x="16" y="4" width="4" height="16" rx="1"/>
+  </symbol>
+  <symbol id="icon-focus" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 5V3M9.5 3h5M12 13V9"/></symbol>
+  <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M8 3v4M16 3v4"/></symbol>
+  <symbol id="icon-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="icon-flame" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <path d="M12 22a7 7 0 0 1-7-7c0-3 1.5-5 2.5-7.5.7 2 2 3 2 3-1-4.5 1.5-7.5 4.5-9.5-1 3 0 5 2 6.5C18.3 9.2 19 11.5 19 15a7 7 0 0 1-7 7Z"/>
+  </symbol>
+  <symbol id="icon-check" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></symbol>
+  <symbol id="icon-tomato" viewBox="0 0 24 24">
+    <circle cx="12" cy="14" r="7" fill="currentColor" stroke="none"/>
+    <path d="M12 7c-1.2-2-3-2.6-4.2-2 1-.2 2 .2 2.7 1M12 7c1.2-2 3-2.6 4.2-2-1-.2-2 .2-2.7 1M12 5v2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-dot" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="12" r="6"/></symbol>
+  <symbol id="icon-coffee" viewBox="0 0 24 24"><path d="M5 9h11v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9Z"/><path d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 4c0 1-1 1-1 2M12 4c0 1-1 1-1 2" stroke-linecap="round"/></symbol>
+  <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 6c-1.5-1.3-4-2-7-2v13c3 0 5.5.7 7 2 1.5-1.3 4-2 7-2V4c-3 0-5.5.7-7 2Z"/><path d="M12 6v13"/></symbol>
+  <symbol id="icon-drag-handle" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/>
+    <circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/>
+    <circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/>
+  </symbol>
+  <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+</svg>
 <div id="app">
   <header class="app-header" id="appHeader"></header>
 
@@ -510,13 +613,13 @@
 
   <nav class="tabbar">
     <button class="tab-btn active" data-action="tab" data-tab="today">
-      <span class="tab-icon">📋</span><span class="tab-label">予定</span>
+      <span class="tab-icon"><svg class="icon"><use href="#icon-schedule"></use></svg></span><span class="tab-label">予定</span>
     </button>
     <button class="tab-btn" data-action="tab" data-tab="focus">
-      <span class="tab-icon">⏱</span><span class="tab-label">集中</span>
+      <span class="tab-icon"><svg class="icon"><use href="#icon-focus"></use></svg></span><span class="tab-label">集中</span>
     </button>
     <button class="tab-btn" data-action="tab" data-tab="stats">
-      <span class="tab-icon">📊</span><span class="tab-label">実績</span>
+      <span class="tab-icon"><svg class="icon"><use href="#icon-stats"></use></svg></span><span class="tab-label">実績</span>
     </button>
   </nav>
 
@@ -524,7 +627,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h2>設定</h2>
-        <button class="icon-btn modal-close-btn" data-action="settings-close" aria-label="閉じる">✕</button>
+        <button class="icon-btn modal-close-btn" data-action="settings-close" aria-label="閉じる"><svg class="icon"><use href="#icon-close"></use></svg></button>
       </div>
       <div class="modal-body">
         <label class="field">
@@ -552,7 +655,7 @@
         <hr>
         <div class="field">
           <span>すべてのタスク・WBS・設定・実績記録を端末から削除します(元に戻せません)</span>
-          <button class="btn danger-outline" data-action="settings:clear-all-data">🗑 全データを削除</button>
+          <button class="btn danger-outline" data-action="settings:clear-all-data"><svg class="icon"><use href="#icon-delete"></use></svg> 全データを削除</button>
         </div>
       </div>
     </div>
@@ -562,7 +665,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h2>日付を選択</h2>
-        <button class="icon-btn modal-close-btn" data-action="cal:close" aria-label="閉じる">✕</button>
+        <button class="icon-btn modal-close-btn" data-action="cal:close" aria-label="閉じる"><svg class="icon"><use href="#icon-close"></use></svg></button>
       </div>
       <div id="calendarBody"></div>
     </div>
@@ -574,7 +677,7 @@
         <h2 id="wbsModalTitle">WBS管理</h2>
         <div class="header-actions">
           <span id="wbsModalToggleAllBtn"></span>
-          <button class="icon-btn modal-close-btn" id="wbsModalCloseBtn" data-action="wbs:close" aria-label="閉じる">✕</button>
+          <button class="icon-btn modal-close-btn" id="wbsModalCloseBtn" data-action="wbs:close" aria-label="閉じる"><svg class="icon"><use href="#icon-close"></use></svg></button>
         </div>
       </div>
       <div class="field">
@@ -598,7 +701,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h2 id="taskModalTitle">タスクを編集</h2>
-        <button class="icon-btn modal-close-btn" data-action="task:edit-close" aria-label="閉じる">✕</button>
+        <button class="icon-btn modal-close-btn" data-action="task:edit-close" aria-label="閉じる"><svg class="icon"><use href="#icon-close"></use></svg></button>
       </div>
       <div class="time-row" style="margin-bottom:14px">
         <input type="time" id="editTaskStart" step="900">
@@ -625,7 +728,7 @@
         </label>
       </div>
       <button class="btn primary" id="taskModalSaveBtn" data-action="task:edit-save">保存</button>
-      <button class="btn danger-outline" id="taskModalDeleteBtn" data-action="task:modal-delete" style="margin-top:8px">🗑 削除</button>
+      <button class="btn danger-outline" id="taskModalDeleteBtn" data-action="task:modal-delete" style="margin-top:8px"><svg class="icon"><use href="#icon-delete"></use></svg> 削除</button>
     </div>
   </div>
 </div>
@@ -1366,8 +1469,12 @@ let editingWbsNodeId = null; // WBS管理モーダルでリネーム編集中の
 // 選び直す必要があった)。タスク編集モーダルのwbsQuickAddParentIdと同じ
 // 考え方だが、別のモーダル(別の作成フローの入口)なので独立させている。
 let wbsModalCreateParentId = null;
-// WBS管理モーダルのツリーで折りたたみ中のノードidの集合。既定は全展開
-// (空集合)。表示上の一時状態なので永続化はせず、リロードで空に戻る。
+// WBS管理モーダルのツリーで折りたたみ中のノードidの集合。表示上の
+// 一時状態なので永続化はしない。モーダルを開いている間は行トグルでの
+// 開閉操作を維持するが、openWbsModal()を呼ぶたび(=モーダルを開き直す
+// たび)に空集合へリセットし、「開くたびに必ず全展開から始まる」ことを
+// 保証する(「WBS管理画面のWBSはデフォルトで全展開にしてほしい」という
+// 要望を受けて、開いている間だけでなく開くたび毎回に適用範囲を広げた)。
 let wbsCollapsedNodeIds = new Set();
 // タスク編集モーダルの「🌳 WBSから選択」ボタンからWBS管理モーダルを
 // 開いた時にtrueになる。モーダルは同時に1つしか開けないため、タスク編集
@@ -1460,7 +1567,7 @@ function renderAll() {
 function renderAppHeader() {
   const el = document.getElementById("appHeader");
   if (!el) return;
-  const streakHtml = state.streak.current > 0 ? `<span class="header-streak">🔥${state.streak.current}</span>` : "";
+  const streakHtml = state.streak.current > 0 ? `<span class="header-streak"><svg class="icon"><use href="#icon-flame"></use></svg>${state.streak.current}</span>` : "";
   const showDateNav = currentView === "today" || currentView === "focus" || currentView === "stats";
   const leftHtml = showDateNav
     ? renderHeaderDateNavHtml()
@@ -1470,10 +1577,10 @@ function renderAppHeader() {
       ${leftHtml}
       <div class="header-actions">
         ${showDateNav ? streakHtml : ""}
-        <button class="icon-btn glyph-icon-btn" id="undoBtn" data-action="task:undo" aria-label="元に戻す">↶</button>
-        <button class="icon-btn glyph-icon-btn" id="redoBtn" data-action="task:redo" aria-label="やり直す">↷</button>
-        <button class="icon-btn" data-action="wbs:open" aria-label="WBS管理">🌳</button>
-        <button class="icon-btn" data-action="settings-open" aria-label="設定">⚙️</button>
+        <button class="icon-btn glyph-icon-btn" id="undoBtn" data-action="task:undo" aria-label="元に戻す"><svg class="icon"><use href="#icon-undo"></use></svg></button>
+        <button class="icon-btn glyph-icon-btn" id="redoBtn" data-action="task:redo" aria-label="やり直す"><svg class="icon"><use href="#icon-redo"></use></svg></button>
+        <button class="icon-btn glyph-icon-btn" data-action="wbs:open" aria-label="WBS管理"><svg class="icon"><use href="#icon-tree"></use></svg></button>
+        <button class="icon-btn glyph-icon-btn" data-action="settings-open" aria-label="設定"><svg class="icon"><use href="#icon-settings"></use></svg></button>
       </div>
     </div>
     ${currentView === "today" ? `<div id="nowBanner"></div>` : ""}
@@ -1484,7 +1591,7 @@ function renderAppHeader() {
 // ボタンの並び・位置が日付によってガタつかないよう、その日は使わない
 // ボタンも常に同じ位置に置いたままdisabledにする(消してしまうと、隣の
 // ボタンの位置が日付ごとにずれて誤タップしやすくなるため)。予定タブ・
-// 集中タブで共用する(▾/▴(短いタスクの全展開/全折りたたみ)はタイムライン
+// 集中タブで共用する(全展開/全折りたたみ(icon-chevron)はタイムライン
 // 固有の機能のため、予定タブ(currentView==="today")の時だけ出す)。
 function renderHeaderDateNavHtml() {
   const d = dayKeyToDate(selectedDate);
@@ -1497,14 +1604,15 @@ function renderHeaderDateNavHtml() {
     const hasCompact = compactIds.length > 0;
     const allExpanded = hasCompact && compactIds.every(cid => expandedTimelineTaskIds.has(cid));
     toggleAllBtn = `<button class="icon-btn date-nav-btn" data-action="timeline:toggle-expand-all"
-      aria-label="${allExpanded ? "短いタスクを全て折りたたむ" : "短いタスクを全て展開する"}" ${hasCompact ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
+      aria-label="${allExpanded ? "短いタスクを全て折りたたむ" : "短いタスクを全て展開する"}" ${hasCompact ? "" : "disabled"}>
+      <svg class="icon"><use href="#${allExpanded ? "icon-unfold-less" : "icon-unfold-more"}"></use></svg></button>`;
   }
   return `
     <div class="date-nav">
-      <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日">◀</button>
+      <button class="icon-btn date-nav-btn" data-action="date:prev" aria-label="前日"><svg class="icon icon-rotate-left"><use href="#icon-chevron"></use></svg></button>
       <span class="date-label">${formatJapaneseDate(d)}</span>
-      <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日">▶</button>
-      <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー">📅</button>
+      <button class="icon-btn date-nav-btn" data-action="date:next" aria-label="翌日"><svg class="icon"><use href="#icon-chevron"></use></svg></button>
+      <button class="icon-btn date-nav-btn" data-action="cal:open" aria-label="カレンダー"><svg class="icon"><use href="#icon-calendar"></use></svg></button>
       <button class="today-jump" data-action="date:today" aria-label="今日に戻る" ${isToday ? "disabled" : ""}>今日</button>
       ${toggleAllBtn}
     </div>`;
@@ -1786,23 +1894,17 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
   // ため、長いパスでもレイアウトは崩れない)。
   const nodePath = wbsNodePath(state, t.wbsNodeId);
   const memoHtml = (showFull && t.memo) ? `<div class="task-memo">${escapeHtml(t.memo)}</div>` : "";
-  // ✏️(編集)・⏱(集中タブへ)は今日・他日を問わず常設している(統一感の
-  // ため)。⏱は選んだ上でselectedDateをそのタスクの日に合わせて集中タブへ
-  // 切り替える(集中タブ自体がselectedDateを共用する日付ナビを持つように
-  // なったため、今日限定にする理由が無い)。
-  // ⏱(U+23F1 STOPWATCH)はUnicode上は絵文字ブロックに属するが既定の
-  // 提示スタイルがtext presentation(環境によっては色の付かない細い
-  // 線画で描画される)なため、実質的に◀▶↶↷と同じ「非絵文字の記号
-  // アイコン」カテゴリに入る。glyph-icon-btnクラス(背景+枠線の円)を
-  // 付けないとライト/ダーク双方で見づらくなる問題を過去に繰り返し指摘
-  // されており、新規追加時は指摘を受ける前から最初に付けるはずだった
-  // ものを付け忘れていた。✏️は常に色付きで描画される真の絵文字のため
-  // 対象外(ヘッダーの↶↷とglyph-icon-btn無しの🌳⚙️が同じ行で混在して
-  // いるのと同じ考え方)。
+  // 編集・集中タブへは今日・他日を問わず常設している(統一感のため)。
+  // 集中タブへのボタンは選んだ上でselectedDateをそのタスクの日に合わせて
+  // 集中タブへ切り替える(集中タブ自体がselectedDateを共用する日付ナビを
+  // 持つようになったため、今日限定にする理由が無い)。両方ともSVG
+  // ピクトグラム(icon-focus/icon-edit)なのでglyph-icon-btnで統一して
+  // 背景+枠線の円を付ける(絵文字だった頃はどちらか一方だけ付いていた
+  // という不統一があった)。
   const actionButtons = showFull
     ? `<div class="timeline-task-actions">
-         <button class="icon-btn glyph-icon-btn timeline-task-action-btn" data-action="task:select-focus" data-id="${t.id}" data-day="${selectedDate}" aria-label="集中タブへ">⏱</button>
-         <button class="icon-btn timeline-task-action-btn" data-action="task:edit-open" data-id="${t.id}" data-day="${selectedDate}" aria-label="編集">✏️</button>
+         <button class="icon-btn glyph-icon-btn timeline-task-action-btn" data-action="task:select-focus" data-id="${t.id}" data-day="${selectedDate}" aria-label="集中タブへ"><svg class="icon"><use href="#icon-focus"></use></svg></button>
+         <button class="icon-btn glyph-icon-btn timeline-task-action-btn" data-action="task:edit-open" data-id="${t.id}" data-day="${selectedDate}" aria-label="編集"><svg class="icon"><use href="#icon-edit"></use></svg></button>
        </div>`
     : "";
   // タスクが「展開中」「縮小中(展開可能)」「そもそも開閉しない」のどれかを
@@ -1815,8 +1917,8 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
   // 自然な高さより伸びている以上「展開中(タップで縮小できる)」ことを
   // 示すべきだから。
   const expandHint = isExpanded
-    ? `<span class="timeline-expand-hint">⌃</span>`
-    : (!showFull ? `<span class="timeline-expand-hint">⌄</span>` : "");
+    ? `<span class="timeline-expand-hint"><svg class="icon icon-rotate-up"><use href="#icon-chevron"></use></svg></span>`
+    : (!showFull ? `<span class="timeline-expand-hint"><svg class="icon icon-rotate-down"><use href="#icon-chevron"></use></svg></span>` : "");
   const body = showFull
     ? `<div class="timeline-task-title ${t.completed ? "done" : ""}">${escapeHtml(nodePath)}</div>
        <div class="timeline-task-meta">${t.startTime}〜${t.endTime}・実績${formatDuration(t.actualMinutes)}</div>
@@ -1885,7 +1987,7 @@ function renderEditWbsPicker() {
     <div class="wbs-current-selection">${currentHtml}</div>
     <input type="text" id="editWbsSearchInput" class="wbs-search-input" placeholder="名前で検索、無ければ新規作成" autocomplete="off">
     <div id="editWbsSearchResults"></div>
-    <button type="button" class="btn" data-action="wbs-picker:open-full">🌳 WBSから選択</button>
+    <button type="button" class="btn" data-action="wbs-picker:open-full"><svg class="icon"><use href="#icon-tree"></use></svg> WBSから選択</button>
   `;
   // 新規作成ミニフォーム(親ノード選択+作成ボタン)は、以前は検索文字列を
   // 入力し始めてから初めて表示していたが、「名前を打つ前にまず親を選びたい
@@ -1934,7 +2036,7 @@ function renderWbsSearchResults(query) {
       <option value="" ${parentValue === "" ? "selected" : ""}>(トップレベル)</option>
       ${parentOptions.map(n => `<option value="${n.id}" ${parentValue === n.id ? "selected" : ""}>${escapeHtml(wbsNodePath(state, n.id))}</option>`).join("")}
     </select>
-    <button type="button" data-action="wbs-picker:quick-add" ${(!trimmed || isDuplicate) ? "disabled" : ""}>＋ 新規作成</button>
+    <button type="button" data-action="wbs-picker:quick-add" ${(!trimmed || isDuplicate) ? "disabled" : ""}><svg class="icon"><use href="#icon-plus"></use></svg> 新規作成</button>
   </div>
   ${isDuplicate ? `<div class="wbs-quick-add-duplicate-note">同じ場所に同名のノードが既にあります</div>` : ""}`;
   container.innerHTML = matchesHtml + quickAddHtml;
@@ -1948,7 +2050,7 @@ function renderNowBanner() {
     if (status.type === "active") {
       const doneBadge = status.task.completed ? "(完了済み)" : "";
       el.className = "now-banner active";
-      el.innerHTML = `🟢 今: ${escapeHtml(wbsNodeName(state, status.task.wbsNodeId))}(${status.task.startTime}〜${status.task.endTime}) ${doneBadge}`;
+      el.innerHTML = `<svg class="icon"><use href="#icon-dot"></use></svg> 今: ${escapeHtml(wbsNodeName(state, status.task.wbsNodeId))}(${status.task.startTime}〜${status.task.endTime}) ${doneBadge}`;
       // 現在進行中のタスクがある場合だけ、バナー自体をタップして集中タブへ
       // 選択遷移できるようにする(次の予定/空き時間バナーはタップ不可のまま)。
       el.dataset.action = "task:select-focus";
@@ -1956,11 +2058,11 @@ function renderNowBanner() {
       el.dataset.day = todayKey();
     } else if (status.next) {
       el.className = "now-banner";
-      el.innerHTML = `☕ 今は空き時間です。次は ${status.next.startTime}〜 ${escapeHtml(wbsNodeName(state, status.next.wbsNodeId))}`;
+      el.innerHTML = `<svg class="icon"><use href="#icon-coffee"></use></svg> 今は空き時間です。次は ${status.next.startTime}〜 ${escapeHtml(wbsNodeName(state, status.next.wbsNodeId))}`;
       delete el.dataset.action; delete el.dataset.id;
     } else {
       el.className = "now-banner";
-      el.innerHTML = `🌤 本日の残りの予定はありません`;
+      el.innerHTML = `<svg class="icon"><use href="#icon-check"></use></svg> 本日の残りの予定はありません`;
       delete el.dataset.action; delete el.dataset.id;
     }
     return;
@@ -1972,8 +2074,8 @@ function renderNowBanner() {
   const tasks = getSelectedEntry().tasks;
   el.className = "now-banner";
   el.innerHTML = tasks.length
-    ? `📋 ${tasks.length}件の予定(完了${tasks.filter(t => t.completed).length}件)`
-    : `📋 この日の予定はまだありません`;
+    ? `<svg class="icon"><use href="#icon-schedule"></use></svg> ${tasks.length}件の予定(完了${tasks.filter(t => t.completed).length}件)`
+    : `<svg class="icon"><use href="#icon-schedule"></use></svg> この日の予定はまだありません`;
   delete el.dataset.action; delete el.dataset.id;
 }
 function renderTimelineHtml(entry) {
@@ -2052,7 +2154,7 @@ function renderTodayView({ autoscroll = false } = {}) {
   const entry = getSelectedEntry();
   container.innerHTML = `
     ${renderTimelineHtml(entry)}
-    <button class="timeline-add-fab" data-action="task:add-open" aria-label="タスクを追加">＋</button>
+    <button class="timeline-add-fab" data-action="task:add-open" aria-label="タスクを追加"><svg class="icon"><use href="#icon-plus"></use></svg></button>
   `;
   // 日付ナビ・▾/▴・バナーはヘッダーに統合済み(renderAppHeader参照)。
   renderAppHeader();
@@ -2276,10 +2378,10 @@ function renderFocusView({ resetScroll = false } = {}) {
       <select id="focusTaskSelect" ${selectDisabled ? "disabled" : ""}>
         ${optionSourceTasks.length ? options : '<option value="">タスクがありません</option>'}
       </select>
-      <button class="icon-btn" data-action="task:edit-open" data-id="${selectedId || ""}" data-day="${session ? session.dayKey : selectedDate}"
-        aria-label="編集" ${selectedId ? "" : "disabled"}>✏️</button>
-      <button class="icon-btn danger" data-action="focus:delete-selected" data-id="${selectedId || ""}"
-        aria-label="削除" ${selectedId ? "" : "disabled"}>🗑</button>
+      <button class="icon-btn glyph-icon-btn" data-action="task:edit-open" data-id="${selectedId || ""}" data-day="${session ? session.dayKey : selectedDate}"
+        aria-label="編集" ${selectedId ? "" : "disabled"}><svg class="icon"><use href="#icon-edit"></use></svg></button>
+      <button class="icon-btn glyph-icon-btn danger" data-action="focus:delete-selected" data-id="${selectedId || ""}"
+        aria-label="削除" ${selectedId ? "" : "disabled"}><svg class="icon"><use href="#icon-delete"></use></svg></button>
     </div>
     ${renderFocusTaskDetailHtml(selectedTask)}
     <div class="timer-card">${timerHtml}</div>
@@ -2301,7 +2403,7 @@ function renderFocusTaskDetailHtml(task) {
     <div class="focus-task-detail">
       <div class="focus-task-detail-title ${task.completed ? "done" : ""}">${escapeHtml(wbsNodePath(state, task.wbsNodeId))}${task.completed ? "(完了済み)" : ""}</div>
       <div class="focus-task-detail-meta">
-        ${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}(🍅${task.plannedPomodoros})・実績${formatDuration(task.actualMinutes)}
+        ${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}(<svg class="icon"><use href="#icon-tomato"></use></svg>${task.plannedPomodoros})・実績${formatDuration(task.actualMinutes)}
       </div>
       ${memoHtml}
     </div>`;
@@ -2342,7 +2444,7 @@ function renderStatsView({ resetScroll = false } = {}) {
       <td>${escapeHtml(wbsNodeName(state, t.wbsNodeId))}</td>
       <td>${formatDuration(t.plannedMinutes)}</td>
       <td>${formatDuration(t.actualMinutes)}</td>
-      <td>${t.completed ? "✅" : "—"}</td>
+      <td>${t.completed ? '<svg class="icon"><use href="#icon-check"></use></svg>' : "—"}</td>
     </tr>`).join("");
 
   container.innerHTML = `
@@ -2376,7 +2478,7 @@ function renderStatsView({ resetScroll = false } = {}) {
       </div>
       ${renderWbsAggregatesHtml()}
     </div>
-    <div class="all-time-row">📚 全期間の実績: ${formatDuration(allTime.actualMinutes)}(完了 ${allTime.completedCount}件)</div>
+    <div class="all-time-row"><svg class="icon"><use href="#icon-book"></use></svg> 全期間の実績: ${formatDuration(allTime.actualMinutes)}(完了 ${allTime.completedCount}件)</div>
   `;
   // 日付ナビ・streakバッジはヘッダーに統合済み(renderAppHeader参照)。
   // 予定/集中タブと同様、日付ナビ操作のたびにヘッダー側も更新する。
@@ -2430,11 +2532,12 @@ function wbsTreeIdsWithChildren(tree) {
 // 参照)と同じ、単一ボタンでの全展開⇄全折りたたみ切り替え。対象(子を持つ
 // ノード)が1つも無ければ日付ナビのボタンと同様disabledにする。
 function renderWbsAggToggleAllBtnHtml() {
-  const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs));
+  const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs.filter(n => !n.deleted)));
   const hasAny = idsWithChildren.length > 0;
   const allExpanded = hasAny && idsWithChildren.every(id => statsExpandedNodeIds.has(id));
   return `<button class="icon-btn date-nav-btn" data-action="stats:toggle-collapse-all"
-    aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
+    aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>
+    <svg class="icon"><use href="#${allExpanded ? "icon-unfold-less" : "icon-unfold-more"}"></use></svg></button>`;
 }
 // 自動アーカイブ廃止(上記4a節参照)により、ここでの「全期間」は文字通り
 // state.days全体が対象になる(以前はアーカイブ済みの月が内訳を失っていた
@@ -2451,24 +2554,31 @@ function renderWbsAggToggleAllBtnHtml() {
 // ブランチの合計を見比べられるようにもなった。「潜れる行」を示すための
 // 専用スタイル(アクセント色+太字+シェブロン)も、WBS管理モーダルの
 // ▼/▶トグルが同じ役割を兼ねるため不要になった。
+// 削除済み(tombstone)ノードは実績タブの内訳には出さない(「削除済みタスクは
+// 実績ビューの集計には出さなくて良い」という要望)。木を組み立てる時点で
+// state.wbsから除外するため、tombstoneノード自身の合計はその子ではなく
+// なる(buildWbsStatsTreeが「子の合計との差分」として計算する「その他」に
+// 自動的に吸収される)。tombstoneのちょうど親だった非表示ノードにdeleted:
+// trueな子がいた場合(subtree削除)もこのfilterで一緒に取り除かれるため、
+// 個別にまた辿る必要はない。全期間の実績(computeAllTimeTotals)はこの木を
+// 経由しない独立集計なので、ここで除いても合計自体が減ることはない。
 function renderWbsAggregatesHtml() {
-  if (!state.wbs.length) return '<div class="empty-hint">WBSノードはまだありません</div>';
+  const visibleWbs = state.wbs.filter(n => !n.deleted);
+  if (!visibleWbs.length) return '<div class="empty-hint">WBSノードはまだありません</div>';
   const totals = computeWbsAggregates(Object.values(state.days), state.wbs);
   const zero = { planned: 0, actual: 0 };
-  const tree = buildWbsStatsTree(buildWbsTree(state.wbs), totals);
+  const tree = buildWbsStatsTree(buildWbsTree(visibleWbs), totals);
   return renderWbsTreeRows(tree, [], (node, guides, isLast, isRoot) => {
     const guide = renderWbsGuideHtml(guides, isLast, isRoot);
     const hasChildren = node.children.length > 0;
     const collapsed = !statsExpandedNodeIds.has(node.id);
     const toggleHtml = hasChildren
-      ? `<button type="button" class="icon-btn glyph-icon-btn wbs-toggle-slot wbs-toggle-btn" data-action="stats:toggle-collapse" data-id="${node.id}" aria-label="${collapsed ? "展開" : "折りたたむ"}" aria-expanded="${!collapsed}">${collapsed ? "▶" : "▼"}</button>`
+      ? `<button type="button" class="icon-btn glyph-icon-btn wbs-toggle-slot wbs-toggle-btn" data-action="stats:toggle-collapse" data-id="${node.id}" aria-label="${collapsed ? "展開" : "折りたたむ"}" aria-expanded="${!collapsed}"><svg class="icon${collapsed ? "" : " icon-rotate-down"}"><use href="#icon-chevron"></use></svg></button>`
       : `<span class="wbs-toggle-slot"></span>`;
     const t = node.isOther ? node.value : (totals[node.id] || zero);
     const nameHtml = node.isOther
       ? `<span class="wbs-row-name wbs-agg-other-label">${escapeHtml(node.name)}</span>`
-      : node.deleted
-        ? `<span class="wbs-row-name wbs-deleted-label">${escapeHtml(node.name)}(削除済み)</span>`
-        : `<span class="wbs-row-name">${escapeHtml(node.name)}</span>`;
+      : `<span class="wbs-row-name">${escapeHtml(node.name)}</span>`;
     return `<div class="wbs-row">
       ${guide.linesHtml}
       <span class="wbs-row-label" style="padding-left:${guide.indentPx}px">
@@ -2537,9 +2647,9 @@ function renderCalendarModal() {
     : "";
   document.getElementById("calendarBody").innerHTML = `
     <div class="calendar-nav">
-      <button class="icon-btn glyph-icon-btn" data-action="cal:prev-month" aria-label="前月">◀</button>
+      <button class="icon-btn glyph-icon-btn" data-action="cal:prev-month" aria-label="前月"><svg class="icon icon-rotate-left"><use href="#icon-chevron"></use></svg></button>
       <span class="month-label">${year}年${month}月</span>
-      <button class="icon-btn glyph-icon-btn" data-action="cal:next-month" aria-label="次月">▶</button>
+      <button class="icon-btn glyph-icon-btn" data-action="cal:next-month" aria-label="次月"><svg class="icon"><use href="#icon-chevron"></use></svg></button>
     </div>
     <div class="calendar-grid">
       ${weekdays.map(w => `<div class="calendar-weekday">${w}</div>`).join("")}
@@ -2551,6 +2661,7 @@ function renderCalendarModal() {
 
 // ---- 6c. WBS管理モーダル ----
 function openWbsModal() {
+  wbsCollapsedNodeIds.clear();
   renderWbsModal();
   document.getElementById("wbsModal").classList.remove("hidden");
 }
@@ -2581,7 +2692,8 @@ function renderWbsModal() {
     const hasAny = idsWithChildren.length > 0;
     const allExpanded = hasAny && idsWithChildren.every(id => !wbsCollapsedNodeIds.has(id));
     document.getElementById("wbsModalToggleAllBtn").innerHTML = `<button class="icon-btn date-nav-btn" data-action="wbs:toggle-collapse-all"
-      aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
+      aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>
+      <svg class="icon"><use href="#${allExpanded ? "icon-unfold-less" : "icon-unfold-more"}"></use></svg></button>`;
   }
   const listHtml = state.wbs.length
     ? renderWbsTreeRows(tree, [], (node, guides, isLast, isRoot) => {
@@ -2594,7 +2706,7 @@ function renderWbsModal() {
         const hasChildren = node.children.length > 0;
         const collapsed = wbsCollapsedNodeIds.has(node.id);
         const toggleHtml = hasChildren
-          ? `<button type="button" class="icon-btn glyph-icon-btn wbs-toggle-slot wbs-toggle-btn" data-action="wbs:toggle-collapse" data-id="${node.id}" aria-label="${collapsed ? "展開" : "折りたたむ"}" aria-expanded="${!collapsed}">${collapsed ? "▶" : "▼"}</button>`
+          ? `<button type="button" class="icon-btn glyph-icon-btn wbs-toggle-slot wbs-toggle-btn" data-action="wbs:toggle-collapse" data-id="${node.id}" aria-label="${collapsed ? "展開" : "折りたたむ"}" aria-expanded="${!collapsed}"><svg class="icon${collapsed ? "" : " icon-rotate-down"}"><use href="#icon-chevron"></use></svg></button>`
           : `<span class="wbs-toggle-slot"></span>`;
         if (node.deleted) {
           // tombstone: 参照中のタスクが残っている間だけ配列に残るノード。
@@ -2609,10 +2721,10 @@ function renderWbsModal() {
           </div>`;
         }
         // タスク編集モーダルの「🌳 WBSから選択」経由(wbsPickerReturnActive)
-        // の間だけ、✏️🗑に加えて✅(選択)を出す。タスクの所属先をこの画面から
-        // 直接決めて編集モーダルへ戻れるようにするため。
+        // の間だけ、編集・削除に加えて選択ボタンを出す。タスクの所属先を
+        // この画面から直接決めて編集モーダルへ戻れるようにするため。
         const pickBtn = wbsPickerReturnActive
-          ? `<button class="icon-btn" data-action="wbs-picker:pick" data-id="${node.id}" aria-label="選択">✅</button>`
+          ? `<button class="icon-btn glyph-icon-btn" data-action="wbs-picker:pick" data-id="${node.id}" aria-label="選択"><svg class="icon"><use href="#icon-check"></use></svg></button>`
           : "";
         const realNode = wbsNodeById(state, node.id);
         const parentAttr = realNode.parentId || "";
@@ -2624,9 +2736,9 @@ function renderWbsModal() {
           </span>
           <span class="wbs-row-actions">
             ${pickBtn}
-            <button type="button" class="icon-btn glyph-icon-btn wbs-drag-handle" data-id="${node.id}" aria-label="ドラッグして並び替え">⠿</button>
-            <button class="icon-btn" data-action="wbs:edit-start" data-id="${node.id}" aria-label="編集">✏️</button>
-            <button class="icon-btn danger" data-action="wbs:delete" data-id="${node.id}" aria-label="削除">🗑</button>
+            <button type="button" class="icon-btn glyph-icon-btn wbs-drag-handle" data-id="${node.id}" aria-label="ドラッグして並び替え"><svg class="icon"><use href="#icon-drag-handle"></use></svg></button>
+            <button class="icon-btn glyph-icon-btn" data-action="wbs:edit-start" data-id="${node.id}" aria-label="編集"><svg class="icon"><use href="#icon-edit"></use></svg></button>
+            <button class="icon-btn glyph-icon-btn danger" data-action="wbs:delete" data-id="${node.id}" aria-label="削除"><svg class="icon"><use href="#icon-delete"></use></svg></button>
           </span>
         </div>`;
       }, true, id => wbsCollapsedNodeIds.has(id))
@@ -3394,7 +3506,7 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "stats:toggle-collapse-all": {
-      const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs));
+      const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs.filter(n => !n.deleted)));
       const allExpanded = idsWithChildren.length > 0 && idsWithChildren.every(id => statsExpandedNodeIds.has(id));
       if (allExpanded) statsExpandedNodeIds.clear();
       else idsWithChildren.forEach(id => statsExpandedNodeIds.add(id));
