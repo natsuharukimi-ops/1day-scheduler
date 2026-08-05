@@ -82,7 +82,20 @@
     }
   }
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  /* overflow:hidden(+overscroll-behavior:none)で、html/body自体が
+     スクロール・バウンス(ラバーバンド)しうる状態を無くす。実際のスクロールは
+     すべて#app配下の入れ子の要素(main、モーダルの.modal-card)が
+     overflow-y:autoで担う設計だが、html/body側にこの指定が無いと、
+     内側の要素が端まで届いた後に指を離さず逆方向へ動かした時、iOS側の
+     スクロール判定が内側の要素からhtml/bodyへ「受け渡り」、その
+     body自身のバウンス(ほぼ何もスクロールする中身が無いのに一瞬伸びて
+     戻る)アニメーションが終わるまで入力を拾わなくなることがある
+     (実際に踏んだ不具合。「タイムラインを端までスクロールした後、
+     逆方向にスクロールしようとすると一時的に画面が固まり、しばらくすると
+     直る」という報告と一致する。当初window.visualViewportの"scroll"
+     イベント購読が原因と推測して対応したが直らず、これが本来の原因と
+     見て別途対応した)。 */
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     background: var(--bg);
@@ -412,6 +425,13 @@
     background: var(--border); font-size: 26px; min-width: 48px; min-height: 48px; border-radius: 50%;
   }
   .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 17px; font-size: 16px; color: var(--text-muted); }
+  /* 設定画面の末尾に表示するアプリのバージョン。「実機で開いているものが
+     きちんと最新の更新版に差し変わっているか」を確認する手段が無かった
+     (ファイル名・保存場所を変えない前提の上書き運用のため、Files
+     アプリの見た目だけでは新旧を判別しづらい)という指摘を受けて追加した。
+     APP_VERSION定数(index.html内で定義)をここに表示するだけの単純な
+     もので、値自体は動作に影響しない。 */
+  .version-label { font-size: 13px; color: var(--text-muted); text-align: center; }
   .field input[type="number"], .field input[type="text"], .field select {
     font-size: 18px; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border);
     background: var(--bg); color: var(--text);
@@ -685,6 +705,8 @@
           <span>すべてのタスク・WBS・設定・実績記録を端末から削除します(元に戻せません)</span>
           <button class="btn danger-outline" data-action="settings:clear-all-data"><svg class="icon"><use href="#icon-delete"></use></svg> 全データを削除</button>
         </div>
+        <hr>
+        <div class="version-label">バージョン: <span id="appVersionValue"></span></div>
       </div>
     </div>
   </div>
@@ -765,6 +787,12 @@
 // ==== 1. 定数・設定値 ====
 const STORAGE_KEY = "1ds:state";
 const SCHEMA_VERSION = 6;
+// index.htmlを書き換えるたびに更新する表示専用のバージョン文字列
+// (YYYY-MM-DD.その日の何回目の更新か)。動作には一切影響せず、設定画面の
+// 末尾に表示するためだけに存在する。「実機で開いているものが最新の
+// 更新版にちゃんと差し変わっているか」を確認する手段が無かった、という
+// 指摘を受けて追加した。
+const APP_VERSION = "2026-08-05.1";
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
@@ -2811,6 +2839,7 @@ function openSettings() {
   document.getElementById("settingsFocusMinutes").value = state.settings.focusMinutes;
   document.getElementById("settingsBreakMinutes").value = state.settings.breakMinutes;
   document.getElementById("settingsStreakThreshold").value = state.settings.streakThreshold;
+  document.getElementById("appVersionValue").textContent = APP_VERSION;
   document.getElementById("settingsModal").classList.remove("hidden");
 }
 function closeSettings() {
