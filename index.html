@@ -71,11 +71,22 @@
     color: var(--text);
     -webkit-tap-highlight-color: transparent;
   }
+  /* iPad miniのホーム画面追加(スタンドアロン表示)で初回起動した直後だけ、
+     フッタ(.tabbar)が実際の画面下端より少し上にずれて表示され、スクロール
+     すると直る、という実機での報告があった(WebKitのスタンドアロン起動直後は
+     100vh/100dvhの解決値が実際のビジュアルビューポートにまだ追いついて
+     いないことがある既知の癖、という理解)。height:100vh/100dvhでの高さ指定
+     をやめ、position:fixed+inset:0で常に実際のビューポート矩形に追従させる
+     方式にした(dvhのような単位の「初回だけ古い値になりうる」問題を避けられる)。
+     この端末固有の不具合は自動検証手段が無く実機でしか確認できないため
+     (CLAUDE.md「GUIの自動検証について」参照)、この修正が実際に直っているかは
+     未検証。直っていなければ別のアプローチ(JSでwindow.innerHeightを都度
+     計測してCSS変数に反映する等)を検討する。 */
   #app {
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    height: 100dvh;
+    position: fixed;
+    inset: 0;
     overflow: hidden;
   }
   /* アプリ全体の常時表示ヘッダー。以前はタイトルバー(.app-header)と
@@ -561,7 +572,10 @@
     <div class="modal-card">
       <div class="modal-header">
         <h2 id="wbsModalTitle">WBS管理</h2>
-        <button class="icon-btn modal-close-btn" id="wbsModalCloseBtn" data-action="wbs:close" aria-label="閉じる">✕</button>
+        <div class="header-actions">
+          <span id="wbsModalToggleAllBtn"></span>
+          <button class="icon-btn modal-close-btn" id="wbsModalCloseBtn" data-action="wbs:close" aria-label="閉じる">✕</button>
+        </div>
       </div>
       <div class="field">
         <span>親ノード(任意)</span>
@@ -2544,10 +2558,31 @@ function closeWbsModal() {
   document.getElementById("wbsModal").classList.add("hidden");
   editingWbsNodeId = null;
 }
+// 新規作成したノードの祖先が折りたたまれていると、作成した直後なのに
+// 一覧上は見えない(選択モードなら✅も押せない)という分かりにくい状態に
+// なる、という指摘を受けて追加した。祖先を辿ってwbsCollapsedNodeIdsから
+// 除くことで、作成したノードは常にその場で見える状態にする。
+function expandWbsAncestors(id) {
+  let current = wbsNodeById(state, id);
+  while (current && current.parentId) {
+    wbsCollapsedNodeIds.delete(current.parentId);
+    current = wbsNodeById(state, current.parentId);
+  }
+}
 function renderWbsModal() {
   document.getElementById("wbsModalTitle").textContent = wbsPickerReturnActive ? "WBS管理(タスクの選択)" : "WBS管理";
   document.getElementById("wbsModalCloseBtn").setAttribute("aria-label", wbsPickerReturnActive ? "閉じる(タスク編集に戻る)" : "閉じる");
   const tree = buildWbsTree(state.wbs);
+  // 全展開/全折りたたみボタン(実績タブのWBS別集計と同じ操作性)。
+  // wbsCollapsedNodeIdsは「折りたたんだ側」を持つ(既定は全展開)ので、
+  // 実績タブ側(statsExpandedNodeIds、既定は全折りたたみ)とは真偽が逆になる。
+  {
+    const idsWithChildren = wbsTreeIdsWithChildren(tree);
+    const hasAny = idsWithChildren.length > 0;
+    const allExpanded = hasAny && idsWithChildren.every(id => !wbsCollapsedNodeIds.has(id));
+    document.getElementById("wbsModalToggleAllBtn").innerHTML = `<button class="icon-btn date-nav-btn" data-action="wbs:toggle-collapse-all"
+      aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
+  }
   const listHtml = state.wbs.length
     ? renderWbsTreeRows(tree, [], (node, guides, isLast, isRoot) => {
         const guide = renderWbsGuideHtml(guides, isLast, isRoot);
@@ -3335,8 +3370,9 @@ document.addEventListener("click", (e) => {
           renameWbsNode(state, editingWbsNodeId, parent, name);
           editingWbsNodeId = null;
         } else {
-          addWbsNode(state, parent, name);
+          const node = addWbsNode(state, parent, name);
           wbsModalCreateParentId = parent; // 兄弟ノードの連続作成に備えて選んだ親を覚える
+          expandWbsAncestors(node.id); // 祖先が折りたたまれていても作成直後は見えるようにする
         }
         saveState(state);
         document.getElementById("wbsNameInput").value = "";
@@ -3368,6 +3404,14 @@ document.addEventListener("click", (e) => {
     case "wbs:toggle-collapse": {
       const id = btn.dataset.id;
       if (wbsCollapsedNodeIds.has(id)) wbsCollapsedNodeIds.delete(id); else wbsCollapsedNodeIds.add(id);
+      renderWbsModal();
+      break;
+    }
+    case "wbs:toggle-collapse-all": {
+      const idsWithChildren = wbsTreeIdsWithChildren(buildWbsTree(state.wbs));
+      const allExpanded = idsWithChildren.length > 0 && idsWithChildren.every(id => !wbsCollapsedNodeIds.has(id));
+      if (allExpanded) idsWithChildren.forEach(id => wbsCollapsedNodeIds.add(id));
+      else wbsCollapsedNodeIds.clear();
       renderWbsModal();
       break;
     }
