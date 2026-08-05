@@ -621,7 +621,6 @@
 const STORAGE_KEY = "1ds:state";
 const SCHEMA_VERSION = 6;
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
-const DAY_DETAIL_RETENTION_MONTHS = 6;
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
 // タイトル+時刻/実績+タグ1行が収まるようこの縮尺にしている。これ未満の
@@ -1072,11 +1071,12 @@ function wbsNodePath(state, id) {
   }
   return names.join(" › ");
 }
-// dayEntriesは複数日ぶんのエントリの配列(全期間集計のため)。ただし
-// 「全期間」は保持期間(既定6か月、state.archive参照)より前の月は
-// 月次サマリーに圧縮され内訳を失っているため、実際には「保持期間内の
-// 全期間」が対象になる(呼び出し側・READMEで明記)。タスクはwbsNodeIdを
-// 1つだけ持つため、タグ時代のような複数タグの重複排除Setは不要。
+// dayEntriesは複数日ぶんのエントリの配列(全期間集計のため)。以前は
+// state.days側に保持期間(既定6か月)があり、それより前の月は月次サマリーに
+// 圧縮され内訳(WBSノードごとの分解)を失っていたため、ここでの「全期間」は
+// 実質「保持期間内」に限られていた。現在は自動アーカイブを廃止したため
+// state.daysは無期限に蓄積され、内訳もずっと残る(下記4a節参照)。タスクは
+// wbsNodeIdを1つだけ持つため、タグ時代のような複数タグの重複排除Setは不要。
 function computeWbsAggregates(dayEntries, wbsNodes) {
   const totals = {};
   const add = (id, planned, actual) => {
@@ -1118,36 +1118,21 @@ function finalizeDay(state, dayKey) {
   }
   entry.finalized = true;
 }
-// ---- 4a. アーカイブ(state.daysの無制限な蓄積を防ぐ) ----
-// 日単位ではなく月単位で丸ごと圧縮する。同じ月の中に「詳細が残っている日」と
-// 「消えた日」が混在すると、カレンダーのドット表示や実績タブの整合性が
-// 崩れるため。タグ別の内訳は持たず合計のみ(必要になれば拡張ポイント)。
-function rollMonthIntoSummary(state, monthKey) {
-  const summary = state.archive.monthlySummaries[monthKey]
-    || { plannedMinutes: 0, actualMinutes: 0, completedCount: 0, totalCount: 0 };
-  for (const dayKey in state.days) {
-    if (!dayKey.startsWith(monthKey)) continue;
-    for (const t of state.days[dayKey].tasks) {
-      summary.plannedMinutes += t.plannedMinutes;
-      summary.actualMinutes += t.actualMinutes;
-      summary.totalCount += 1;
-      if (t.completed) summary.completedCount += 1;
-    }
-    delete state.days[dayKey];
-  }
-  state.archive.monthlySummaries[monthKey] = summary;
-}
-function archiveOldMonths(state, todayDayKey, retentionMonths = DAY_DETAIL_RETENTION_MONTHS) {
-  const [ty, tm] = todayDayKey.split("-").map(Number);
-  const keepFrom = new Date(ty, tm - 1 - (retentionMonths - 1), 1);
-  const keepFromKey = `${keepFrom.getFullYear()}-${pad2(keepFrom.getMonth() + 1)}`;
-  const monthsToArchive = new Set();
-  for (const dayKey in state.days) {
-    const monthKey = dayKey.slice(0, 7);
-    if (monthKey < keepFromKey) monthsToArchive.add(monthKey);
-  }
-  for (const monthKey of monthsToArchive) rollMonthIntoSummary(state, monthKey);
-}
+// ---- 4a. アーカイブ(廃止済み、後方互換の読み取りだけ残す) ----
+// 以前はstate.daysの無制限な蓄積を防ぐため、保持期間(既定6か月)より前の月を
+// 月単位でstate.archive.monthlySummariesへ圧縮し、元のstate.daysからは
+// 削除していた(rollMonthIntoSummary/archiveOldMonths、rolloverIfNeededから
+// 毎日呼んでいた)。「WBSで管理するようになった以上、過去分を自動で消す/
+// 圧縮する必要は無い。WBSがかさみ過ぎたらエクスポート→全データ削除→
+// 必要ならまたインポート、で手動管理すればいい」という指摘を受け、この
+// 自動アーカイブを廃止した(state.days・stateの他のフィールドは形を一切
+// 変えていないため、スキーマバージョンは変えていない)。ただし、この変更
+// より前にアーカイブ済みだったデータ(古いエクスポートファイルや、既に
+// 何か月分か圧縮された状態でインポートされたデータ)は無かったことには
+// できないため、state.archive.monthlySummaries自体とその読み取り
+// (computeAllTimeTotals、カレンダーモーダルのarchiveNote)はそのまま残して
+// ある。新規にこの集計へ追加されることはもう無い、既存分だけを表示し
+// 続ける後方互換のための仕組みという位置づけになった。
 function computeAllTimeTotals(state) {
   let actualMinutes = 0, completedCount = 0;
   for (const summary of Object.values(state.archive.monthlySummaries)) {
@@ -1172,7 +1157,6 @@ function rolloverIfNeeded(state, now = new Date()) {
   if (state.lastOpenedDay !== today) {
     const prevDay = state.lastOpenedDay;
     finalizeDay(state, prevDay);
-    archiveOldMonths(state, today);
     state.pausedSessions = {}; // 前日の中断中セッションは新しい日には引き継がない
     state.lastOpenedDay = today;
     ensureDay(state, today);
@@ -1361,6 +1345,13 @@ let taskFormWbsNodeId = null;
 // 毎回同じ親を選び直す手間を省きたい、という要望に基づく。
 let wbsQuickAddParentId = null;
 let editingWbsNodeId = null; // WBS管理モーダルでリネーム編集中のノードid(nullなら新規作成モード)
+// WBS管理モーダル自体の作成フォーム(wbsParentSelect/wbsNameInput)で最後に
+// 選んだ親ノードid(nullはトップレベル)。以前は「ノードを作成」のたびに
+// renderWbsModal()がselect要素を丸ごと作り直すため、選んだ親が毎回
+// トップレベルに戻ってしまっていた(=兄弟ノードを連続作成する時に毎回
+// 選び直す必要があった)。タスク編集モーダルのwbsQuickAddParentIdと同じ
+// 考え方だが、別のモーダル(別の作成フローの入口)なので独立させている。
+let wbsModalCreateParentId = null;
 // WBS管理モーダルのツリーで折りたたみ中のノードidの集合。既定は全展開
 // (空集合)。表示上の一時状態なので永続化はせず、リロードで空に戻る。
 let wbsCollapsedNodeIds = new Set();
@@ -2366,7 +2357,7 @@ function renderStatsView({ resetScroll = false } = {}) {
     </div>
     <div class="heatmap-section">
       <div class="app-header-row wbs-agg-header-row">
-        <div class="heatmap-title">WBS別集計(保持期間内の全期間)</div>
+        <div class="heatmap-title">WBS別集計(全期間)</div>
         ${renderWbsAggToggleAllBtnHtml()}
       </div>
       ${renderWbsAggregatesHtml()}
@@ -2431,9 +2422,9 @@ function renderWbsAggToggleAllBtnHtml() {
   return `<button class="icon-btn date-nav-btn" data-action="stats:toggle-collapse-all"
     aria-label="${allExpanded ? "WBSをすべて折りたたむ" : "WBSをすべて展開する"}" ${hasAny ? "" : "disabled"}>${allExpanded ? "▴" : "▾"}</button>`;
 }
-// 「全期間」は保持期間(既定6か月)より前の月は月次サマリーに圧縮され
-// 内訳が失われているため、実際には「保持期間内の全期間」が対象
-// (README/CLAUDE.mdに明記)。
+// 自動アーカイブ廃止(上記4a節参照)により、ここでの「全期間」は文字通り
+// state.days全体が対象になる(以前はアーカイブ済みの月が内訳を失っていた
+// ため、実質「保持期間内の全期間」に限られていた)。
 // 以前はパンくず+行タップで1段ずつ子ノードに潜るドリルダウン方式だった
 // (現在地の直下しか描画しないためスケールする、という理由で採用)。
 // しかし「開閉をフィルタとして捉えれば、もっとシンプルに表現できるのでは」
@@ -2621,6 +2612,11 @@ function renderWbsModal() {
     document.getElementById("wbsSubmitBtn").textContent = "更新";
     document.getElementById("wbsCancelEditBtn").style.display = "";
   } else {
+    // 前回この作成フォームで選んだ親を引き継ぐ(トップレベルへは戻さない)。
+    // 参照先が(親候補から除外された等の理由で)無効になっている場合だけ
+    // トップレベルへフォールバックする。
+    select.value = wbsModalCreateParentId && parentOptions.some(n => n.id === wbsModalCreateParentId)
+      ? wbsModalCreateParentId : "";
     document.getElementById("wbsSubmitBtn").textContent = "ノードを作成";
     document.getElementById("wbsCancelEditBtn").style.display = "none";
   }
@@ -3340,6 +3336,7 @@ document.addEventListener("click", (e) => {
           editingWbsNodeId = null;
         } else {
           addWbsNode(state, parent, name);
+          wbsModalCreateParentId = parent; // 兄弟ノードの連続作成に備えて選んだ親を覚える
         }
         saveState(state);
         document.getElementById("wbsNameInput").value = "";
@@ -3490,6 +3487,12 @@ document.addEventListener("change", (e) => {
     // wbsQuickAddParentIdと重複判定/作成ボタンの活性状態だけ更新する。
     wbsQuickAddParentId = el.value || null;
     renderWbsSearchResults(document.getElementById("editWbsSearchInput").value.trim());
+  } else if (el.id === "wbsParentSelect" && !editingWbsNodeId) {
+    // 作成モード中に親を選び直した場合、まだ「作成」を押していなくても
+    // 次のrenderWbsModal()(ドラッグ並び替え等、他の操作による再描画)で
+    // 選び直した親が失われないよう先に覚えておく。編集(リネーム)モード中は
+    // このselectは編集対象ノード自身の親を表しているため対象外にする。
+    wbsModalCreateParentId = el.value || null;
   }
 });
 // タスク編集モーダルのWBS検索欄だけ、入力のたびに(change=フォーカスが
@@ -3498,6 +3501,21 @@ document.addEventListener("input", (e) => {
   const el = e.target;
   if (el.id === "editWbsSearchInput") {
     renderWbsSearchResults(el.value.trim());
+  }
+});
+// モーダル(設定/カレンダー/WBS管理/タスク編集)の半透明の背景部分(.modal-card
+// の外側)をタップした時、✕ボタンと同じ扱いで閉じる。e.target(実際に
+// クリックされた要素)が.modal自身と一致する場合だけが対象で、.modal-card
+// (中のカード本体、フォーム部品含む)へのクリックはbubblingで.modalまで
+// 届いてもe.targetはカード側の要素のままなので対象にならない。確認
+// ダイアログ(delete/削除確認等のconfirm())はブラウザネイティブのモーダルで
+// この仕組みの対象外(そもそもDOM要素ではないため関与しない)。実際の
+// クローズ処理は各モーダルの✕ボタン(data-action付き)へclick()するだけに
+// とどめ、wbsPickerReturnActiveのような✕ボタン側の分岐ロジックを重複させない。
+document.addEventListener("click", (e) => {
+  if (e.target.classList.contains("modal") && !e.target.classList.contains("hidden")) {
+    const closeBtn = e.target.querySelector(".modal-close-btn");
+    if (closeBtn) closeBtn.click();
   }
 });
 document.addEventListener("visibilitychange", () => {
