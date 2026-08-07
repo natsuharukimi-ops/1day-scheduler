@@ -792,7 +792,7 @@ const SCHEMA_VERSION = 6;
 // 末尾に表示するためだけに存在する。「実機で開いているものが最新の
 // 更新版にちゃんと差し変わっているか」を確認する手段が無かった、という
 // 指摘を受けて追加した。
-const APP_VERSION = "v1.1.0";
+const APP_VERSION = "v1.3.0";
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
@@ -913,6 +913,20 @@ function migrateState(raw) {
   const state = defaultState();
   state.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
   state.days = raw.days && typeof raw.days === "object" ? raw.days : {};
+  // v1.2.0で実績の内部表現をactualMinutes(整数分、集中時間のみ)から
+  // actualSeconds(整数秒、休憩時間も含む)へ変更した。フィールドの意味自体が
+  // 変わる(休憩分が乗る)ためSCHEMA_VERSIONを上げて全消去する対象ではなく、
+  // 既存の実績値をそのまま秒に換算して引き継ぐ片方向変換として、同一
+  // バージョン内の防御的補完のここで行う(以後は毎回no-op)。
+  for (const entry of Object.values(state.days)) {
+    if (!Array.isArray(entry.tasks)) continue;
+    for (const task of entry.tasks) {
+      if (typeof task.actualSeconds !== "number") {
+        task.actualSeconds = typeof task.actualMinutes === "number" ? Math.round(task.actualMinutes * 60) : 0;
+      }
+      delete task.actualMinutes;
+    }
+  }
   state.streak = { current: 0, longest: 0, lastAchievedDay: null, ...(raw.streak || {}) };
   state.activeSession = raw.activeSession || null;
   // dayKeyの無い旧データ(このフィールド追加以前に保存されたactiveSession)は
@@ -920,6 +934,12 @@ function migrateState(raw) {
   // 跨いで残っていた極めて稀なケースだけ従来通り復元できない(元々このフィールドが
   // 無い時点で日跨ぎは考慮されていなかったため、退行にはならない)。
   if (state.activeSession && !state.activeSession.dayKey) state.activeSession.dayKey = todayKey();
+  // checkpointAt(直近で実績にコミット済みの時刻)は、このフィールド追加より
+  // 前に保存されたactiveSessionには存在しない。無いままcommitElapsedSinceCheckpoint
+  // に渡るとNaNが実績に加算されてしまうため、読み込み時点を新たな
+  // チェックポイントとして扱う(それ以前の未コミット分は遡って計算しない。
+  // 一時停止中ならどのみちresumeSession()が再開時に上書きするため実害は無い)。
+  if (state.activeSession && !state.activeSession.checkpointAt) state.activeSession.checkpointAt = Date.now();
   state.pausedSessions = raw.pausedSessions && typeof raw.pausedSessions === "object" ? raw.pausedSessions : {};
   for (const tid in state.pausedSessions) {
     if (!state.pausedSessions[tid].dayKey) state.pausedSessions[tid].dayKey = todayKey();
@@ -989,11 +1009,11 @@ function addTask(state, dayKey, { wbsNodeId, memo, startTime, endTime }) {
     id: genId(), wbsNodeId, memo: memo || "", startTime, endTime,
     plannedMinutes: computed.plannedMinutes,
     plannedPomodoros: computed.plannedPomodoros,
-    actualMinutes: 0,
+    actualSeconds: 0,
     completed: false,
   });
 }
-function updateTask(state, dayKey, taskId, { wbsNodeId, memo, startTime, endTime, actualMinutes, completed }) {
+function updateTask(state, dayKey, taskId, { wbsNodeId, memo, startTime, endTime, actualSeconds, completed }) {
   if (!wbsNodeId) throw new Error("WBSノードを選択してください");
   const day = state.days[dayKey]; if (!day) return;
   const task = day.tasks.find(t => t.id === taskId); if (!task) return;
@@ -1009,7 +1029,7 @@ function updateTask(state, dayKey, taskId, { wbsNodeId, memo, startTime, endTime
   task.endTime = endTime;
   task.plannedMinutes = computed.plannedMinutes;
   task.plannedPomodoros = computed.plannedPomodoros;
-  task.actualMinutes = Math.max(0, Math.round(actualMinutes));
+  task.actualSeconds = Math.max(0, Math.round(actualSeconds));
   task.completed = !!completed;
   if (prevWbsNodeId !== wbsNodeId) purgeOrphanedDeletedNodes(state);
 }
@@ -1102,10 +1122,10 @@ function toggleTaskComplete(state, dayKey, taskId) {
   const task = day.tasks.find(t => t.id === taskId); if (!task) return;
   task.completed = !task.completed;
 }
-function addActualMinutes(state, dayKey, taskId, minutes) {
+function addActualSeconds(state, dayKey, taskId, seconds) {
   const day = state.days[dayKey]; if (!day) return;
   const task = day.tasks.find(t => t.id === taskId); if (!task) return;
-  task.actualMinutes += minutes;
+  task.actualSeconds += seconds;
 }
 // ==== 4a-wbs. WBS(作業分解構造)ノードCRUD ====
 // タグは"/"区切りのフラット文字列配列だったが、WBSはid/parentIdによる
@@ -1250,6 +1270,9 @@ function wbsNodePath(state, id) {
 // 実質「保持期間内」に限られていた。現在は自動アーカイブを廃止したため
 // state.daysは無期限に蓄積され、内訳もずっと残る(下記4a節参照)。タスクは
 // wbsNodeIdを1つだけ持つため、タグ時代のような複数タグの重複排除Setは不要。
+// totals[id].plannedは分、.actualは秒(task.actualSecondsをそのまま積む)の
+// 単位混在に注意。actualを分に丸めるのは表示直前(renderWbsAggregatesHtml)の
+// 1回だけにして、ノードをまたぐ積算の途中では丸め誤差を持ち込まない。
 function computeWbsAggregates(dayEntries, wbsNodes) {
   const totals = {};
   const add = (id, planned, actual) => {
@@ -1263,7 +1286,7 @@ function computeWbsAggregates(dayEntries, wbsNodes) {
       const guard = new Set();
       let current = nodeById(t.wbsNodeId);
       while (current && !guard.has(current.id)) {
-        add(current.id, t.plannedMinutes, t.actualMinutes);
+        add(current.id, t.plannedMinutes, t.actualSeconds);
         guard.add(current.id);
         current = current.parentId ? nodeById(current.parentId) : null;
       }
@@ -1314,11 +1337,11 @@ function computeAllTimeTotals(state) {
   }
   for (const entry of Object.values(state.days)) {
     for (const t of entry.tasks) {
-      actualMinutes += t.actualMinutes;
+      actualMinutes += t.actualSeconds / 60;
       if (t.completed) completedCount += 1;
     }
   }
-  return { actualMinutes, completedCount };
+  return { actualMinutes: Math.round(actualMinutes), completedCount };
 }
 
 // lastOpenedDayを確定対象にする(「昨日」固定だと数日開かなかった場合に中間の日を誤って扱う)。
@@ -1331,6 +1354,16 @@ function rolloverIfNeeded(state, now = new Date()) {
     const prevDay = state.lastOpenedDay;
     finalizeDay(state, prevDay);
     state.pausedSessions = {}; // 前日の中断中セッションは新しい日には引き継がない
+    // 一時停止したまま日をまたいだactiveSessionも同じ方針で新しい日には
+    // 持ち越さない。一時停止した時点でcommitElapsedSinceCheckpoint(pauseSession
+    // 参照)が既に実績へコミット済みのため、ここでは経過分の精算は不要で、
+    // ただ捨てるだけでよい(以前は精算処理をここに持っていたが、コミット
+    // ポイントを一時停止時に前倒ししたことで不要になった)。実行中
+    // (paused:false)のセッションはtick()が壁時計との差分で自然に
+    // completeSession()へ導くためここでは扱わない。
+    if (state.activeSession && state.activeSession.paused) {
+      state.activeSession = null;
+    }
     state.lastOpenedDay = today;
     ensureDay(state, today);
     saveState(state);
@@ -1429,18 +1462,32 @@ function startSession(taskId, kind) {
   // 実績を積む対象はタスク自身が属する日であるべきなので、todayKey()固定
   // ではなくselectedDateを使う(他日のタスクを選んで実行した場合、実績は
   // その日のタスクエントリに積算される)。日を跨いで実行中/一時停止中の
-  // まま残った場合、addActualMinutesの対象日をtodayKey()の再評価(=日付が
+  // まま残った場合、addActualSecondsの対象日をtodayKey()の再評価(=日付が
   // 変わった後の新しい日)に任せると、タスクが属する古い日には見つからず
   // 実績が消える(過去に実際に起きたバグ)。セッションに紐付いたこの
   // dayKeyを最後まで使うことで、日を跨いでも元のタスクに正しく積算される。
-  state.activeSession = { taskId, dayKey: selectedDate, kind, endAt: Date.now() + minutes * 60000, paused: false, pausedRemainingMs: null };
+  // checkpointAtは「直近で実績にコミット済みの時刻」を指す(下記
+  // commitElapsedSinceCheckpoint参照)。開始直後は何もコミットしていないので今の時刻。
+  state.activeSession = { taskId, dayKey: selectedDate, kind, endAt: Date.now() + minutes * 60000, paused: false, pausedRemainingMs: null, checkpointAt: Date.now() };
   AudioCue.unlock(); // ユーザー操作(このタップ)の中で生成・resumeする必要がある
   saveState(state);
   renderAll();
   ensureTickTimer();
 }
+// 一時停止・完了・フェーズの自然完了のいずれでも、直近のチェックポイント
+// (session.checkpointAt、開始/再開/前回のコミットの時刻)からの経過分だけを
+// 実績へ加算する。フェーズ開始からの累計をその都度加算する方式だと、同じ
+// フェーズ内で一時停止→再開を繰り返した場合に二重・三重に加算してしまう
+// ため、必ず「前回コミットからの差分」だけを対象にする。一時停止中は時間が
+// 凍結されておりこの関数を呼ぶ必要が無い(呼び出し側で除外している)。
+function commitElapsedSinceCheckpoint(session, now = Date.now()) {
+  const elapsedSeconds = Math.max(0, Math.round((now - session.checkpointAt) / 1000));
+  if (elapsedSeconds > 0) addActualSeconds(state, session.dayKey, session.taskId, elapsedSeconds);
+  session.checkpointAt = now;
+}
 function pauseSession() {
   if (!state.activeSession || state.activeSession.paused) return;
+  commitElapsedSinceCheckpoint(state.activeSession);
   state.activeSession.pausedRemainingMs = state.activeSession.endAt - Date.now();
   state.activeSession.paused = true;
   saveState(state); renderAll();
@@ -1450,24 +1497,64 @@ function resumeSession() {
   state.activeSession.endAt = Date.now() + state.activeSession.pausedRemainingMs;
   state.activeSession.paused = false;
   state.activeSession.pausedRemainingMs = null;
+  state.activeSession.checkpointAt = Date.now(); // ここから経過分の計測をリスタートする
   saveState(state); renderAll(); ensureTickTimer();
 }
-// 集中フェーズを手動で終了する際に、経過分を切り捨てず記録するための計算。
-// 自然完了(completeSession)は常にfocusMinutes固定分を加算するのに対し、
-// こちらは実測の経過時間をMath.roundで丸める(体感のズレを避けるため)。
-function getSessionElapsedFocusMinutes(session) {
-  if (!session || session.kind !== "focus") return 0;
-  const totalMs = state.settings.focusMinutes * 60000;
-  const remainingMs = session.paused ? session.pausedRemainingMs : session.endAt - Date.now();
-  const elapsedMs = totalMs - Math.max(0, remainingMs);
-  return Math.max(0, Math.round(elapsedMs / 60000));
+// 集中タブで対象タスクを切り替える(`<select>`の変更・タイムラインの⏱・
+// 「今」バナーのタップ、いずれからも共通で呼ぶ)。実際に踏んだバグ: 以前は
+// ⏱ボタン等が`focusSelectedTaskId`だけを書き換えており、既存の
+// `state.activeSession`(他タスクの一時停止中セッション)を素通りしていた。
+// renderFocusViewは`session ? session.taskId : focusSelectedTaskId`という
+// 優先順位で表示対象を決めるため、日をまたいだ/同日問わずどこかのタスクが
+// 一時停止中のまま残っていると、⏱で別のタスクを選んだつもりでもその古い
+// セッションのタスクへ画面が「飛ぶ」ように見える不具合になっていた。
+// `<select>`のonchangeハンドラだけがpausedSessionsへの退避/復元をきちんと
+// 行っていたので、その処理をここへ切り出して両方の入口から共通で呼ぶ。
+function switchFocusTarget(newId) {
+  if (state.activeSession && state.activeSession.taskId === newId) {
+    focusSelectedTaskId = newId; // 既に対象なので何もしない
+    return;
+  }
+  if (state.activeSession && !state.activeSession.paused) {
+    return; // 実行中のセッションがある間は切り替えられない(呼び出し元の表示もこれを前提にする)
+  }
+  if (state.activeSession && state.activeSession.paused) {
+    state.pausedSessions[state.activeSession.taskId] = {
+      kind: state.activeSession.kind,
+      pausedRemainingMs: state.activeSession.pausedRemainingMs,
+      dayKey: state.activeSession.dayKey,
+    };
+    state.activeSession = null;
+  }
+  if (!state.activeSession && state.pausedSessions[newId]) {
+    const parked = state.pausedSessions[newId];
+    // checkpointAtはresumeSession()が再開時に必ず上書きするため、一時停止中の
+    // 間は使われない(nullのままでよい)。
+    state.activeSession = { taskId: newId, dayKey: parked.dayKey, kind: parked.kind, paused: true, pausedRemainingMs: parked.pausedRemainingMs, endAt: null, checkpointAt: null };
+    delete state.pausedSessions[newId];
+  }
+  focusSelectedTaskId = newId;
+  saveState(state);
 }
-function finishSession(elapsedMinutes) {
+// 「完了」ボタンの確認ダイアログに出す、まだ実績へコミットしていない
+// (=直近のチェックポイントからの)経過秒数。一時停止中は時間が凍結されて
+// おり新たに経過した分は無い(一時停止した瞬間に既にコミット済み)ため0。
+function getPendingElapsedSeconds(session) {
+  if (!session || session.paused) return 0;
+  return Math.max(0, Math.round((Date.now() - session.checkpointAt) / 1000));
+}
+// タイマーの「完了」ボタン(旧「終了」)。実行中ならその場までの経過分を
+// コミットしたうえで(一時停止中は既にコミット済みのため何もしない)、
+// 対象タスクを完了状態にする(チェックボックスと同じcompleted=trueへの
+// 遷移)。完了状態になった後も別セッションの開始やチェックボックスでの
+// 解除は他の経路でこれまで通り行えるため、ここでは一方向にtrueへ倒すだけでよい。
+function finishSession() {
   const session = state.activeSession;
   if (!session) return;
-  if (session.kind === "focus" && elapsedMinutes > 0) {
-    addActualMinutes(state, session.dayKey, session.taskId, elapsedMinutes);
-  }
+  if (!session.paused) commitElapsedSinceCheckpoint(session);
+  const day = state.days[session.dayKey];
+  const task = day && day.tasks.find(t => t.id === session.taskId);
+  if (task) task.completed = true;
   state.activeSession = null;
   saveState(state); renderAll();
 }
@@ -1478,31 +1565,37 @@ function finishSession(elapsedMinutes) {
 // ユーザーの判断に委ねる(際限なく回り続けて放置されるのを避けるため)。
 // なお集中→休憩の自動遷移(completeSession内のfocus分岐)は元々あり、
 // 「複数ポモドーロの自動連結が無い」という既知の制約は休憩→次の集中の
-// 遷移だけが手動だったことを指していた。
+// 遷移だけが手動だったことを指していた。実績(actualSeconds)は休憩時間も
+// 含むため、1ラウンド分(pomodoroRoundMinutes)を単位にブロック完了数を数える
+// (集中時間だけを分母にすると休憩ぶん実態より多くブロックが完了した
+// ことになってしまう)。
 function shouldAutoContinuePomodoro(session) {
   const task = getEntryForDate(session.dayKey).tasks.find(t => t.id === session.taskId);
   if (!task || task.completed) return false;
-  const blocksDone = Math.round(task.actualMinutes / state.settings.focusMinutes);
+  const roundSeconds = pomodoroRoundMinutes(state.settings) * 60;
+  const blocksDone = Math.round(task.actualSeconds / roundSeconds);
   return blocksDone < task.plannedPomodoros;
 }
 function completeSession() {
   const session = state.activeSession;
   if (!session) return;
-  if (session.kind === "focus") {
-    addActualMinutes(state, session.dayKey, session.taskId, state.settings.focusMinutes);
-  }
+  // 休憩時間も実績に含める(例: 25分集中+5分休憩を1回まわしたら実績30分)。
+  // 一時停止を挟んでいてもcommitElapsedSinceCheckpointが都度コミット済み
+  // なので、ここでは残りのチェックポイントからの差分だけを加算すればよい
+  // (フェーズの固定分をまとめて加算する必要は無い)。
+  commitElapsedSinceCheckpoint(session);
   AudioCue.beep(session.kind === "focus" ? 660 : 990);
   if (session.kind === "focus") {
     state.activeSession = {
       taskId: session.taskId, dayKey: session.dayKey, kind: "break",
       endAt: Date.now() + state.settings.breakMinutes * 60000,
-      paused: false, pausedRemainingMs: null,
+      paused: false, pausedRemainingMs: null, checkpointAt: Date.now(),
     };
   } else if (shouldAutoContinuePomodoro(session)) {
     state.activeSession = {
       taskId: session.taskId, dayKey: session.dayKey, kind: "focus",
       endAt: Date.now() + state.settings.focusMinutes * 60000,
-      paused: false, pausedRemainingMs: null,
+      paused: false, pausedRemainingMs: null, checkpointAt: Date.now(),
     };
   } else {
     state.activeSession = null;
@@ -2014,7 +2107,7 @@ function timelineTaskBoxHtml(t, top, height, isExpanded, driverTaskId, isExpanda
     : (!showFull ? `<span class="timeline-expand-hint"><svg class="icon icon-rotate-down"><use href="#icon-chevron"></use></svg></span>` : "");
   const body = showFull
     ? `<div class="timeline-task-title ${t.completed ? "done" : ""}">${escapeHtml(nodePath)}</div>
-       <div class="timeline-task-meta">${t.startTime}〜${t.endTime}・実績${formatDuration(t.actualMinutes)}</div>
+       <div class="timeline-task-meta">${t.startTime}〜${t.endTime}・実績${formatDuration(Math.round(t.actualSeconds / 60))}</div>
        ${memoHtml}`
     : `<div class="timeline-task-title compact ${t.completed ? "done" : ""}">${escapeHtml(nodePath)}</div>`;
   // ドラッグの移動・リサイズはポインタの移動量(delta)を実際の開始/終了分
@@ -2297,7 +2390,7 @@ function openTaskModal(taskId, dayKey) {
   taskFormWbsNodeId = isEdit ? task.wbsNodeId : null;
   renderEditWbsPicker();
   if (isEdit) {
-    document.getElementById("editTaskActual").value = task.actualMinutes;
+    document.getElementById("editTaskActual").value = Math.round(task.actualSeconds / 60);
     document.getElementById("editTaskCompleted").checked = task.completed;
     // 実行中だけでなく一時停止中(=他タスクへ退避されpausedSessionsに
     // 待避中)のセッションも対象に含める。以前はactiveSessionだけを見て
@@ -2307,6 +2400,9 @@ function openTaskModal(taskId, dayKey) {
     const timerInProgress = hasSessionInProgress(taskId);
     document.getElementById("editTaskActual").disabled = timerInProgress;
     document.getElementById("editTaskActualNote").style.display = timerInProgress ? "" : "none";
+    // 完了チェックも同じ基準で無効化する(タイムラインのチェックボックスと
+    // 同様、セッション進行中はタイマー側の「完了」で締めくくってもらう)。
+    document.getElementById("editTaskCompleted").disabled = timerInProgress;
   }
   document.getElementById("taskEditModal").classList.remove("hidden");
 }
@@ -2333,22 +2429,25 @@ function saveTaskEditFromForm() {
     : "";
   const isEdit = editingTaskId !== null;
   const actualInput = document.getElementById("editTaskActual");
-  let actual = 0;
+  let actualSeconds = 0;
   if (isEdit) {
-    actual = actualInput.disabled
-      ? getEntryForDate(editingTaskDayKey).tasks.find(t => t.id === editingTaskId).actualMinutes
-      : Number(actualInput.value);
+    // 欄が無効化されている(タイマー進行中)場合は、その欄の値(古いまま
+    // 表示されている分単位)を分→秒へ丸め直して経由させると誤差が乗るため、
+    // 現在の秒単位の実績値をそのまま素通しする。
+    actualSeconds = actualInput.disabled
+      ? getEntryForDate(editingTaskDayKey).tasks.find(t => t.id === editingTaskId).actualSeconds
+      : Math.round(Number(actualInput.value) * 60);
   }
   const completed = isEdit ? document.getElementById("editTaskCompleted").checked : false;
   if (!start || !end) { alert("時刻を入力してください"); return; }
   if (!taskFormWbsNodeId) { alert("WBSノードを選択してください"); return; }
-  if (!Number.isFinite(actual) || actual < 0) { alert("実績時間は0以上の数値にしてください"); return; }
+  if (!Number.isFinite(actualSeconds) || actualSeconds < 0) { alert("実績時間は0以上の数値にしてください"); return; }
   recordUndoPoint();
   try {
     if (isEdit) {
       updateTask(state, editingTaskDayKey, editingTaskId, {
         wbsNodeId: taskFormWbsNodeId, memo, startTime: start, endTime: end,
-        actualMinutes: actual, completed,
+        actualSeconds, completed,
       });
     } else {
       addTask(state, editingTaskDayKey, { wbsNodeId: taskFormWbsNodeId, memo, startTime: start, endTime: end });
@@ -2438,7 +2537,7 @@ function renderFocusView({ resetScroll = false } = {}) {
     const remaining = session.paused ? session.pausedRemainingMs : session.endAt - Date.now();
     const phase = session.kind === "focus" ? "集中" : "休憩";
     const task = sessionTask;
-    const blocksDone = task ? Math.round(task.actualMinutes / state.settings.focusMinutes) : 0;
+    const blocksDone = task ? Math.round(task.actualSeconds / (pomodoroRoundMinutes(state.settings) * 60)) : 0;
     const blocksTotal = task ? task.plannedPomodoros : 0;
     // 休憩中は「このまま放っておくと次にどうなるか」が分かるよう、
     // 自動連結の有無をヒントとして出す(shouldAutoContinuePomodoroは
@@ -2456,11 +2555,11 @@ function renderFocusView({ resetScroll = false } = {}) {
         ${session.paused
           ? '<button class="btn primary" data-action="resume">再開</button>'
           : '<button class="btn" data-action="pause">一時停止</button>'}
-        <button class="btn danger-outline" data-action="finish">終了</button>
+        <button class="btn danger-outline" data-action="finish">完了</button>
       </div>
       ${breakContinueHint}
       ${session.paused && !sessionTaskOtherDay ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}
-      ${sessionTaskOtherDay ? '<div class="timer-hint">表示中の日付とは別の日のタスクのため、他のタスクへの切り替えはできません。先に「終了」してください。</div>' : ""}`;
+      ${sessionTaskOtherDay ? '<div class="timer-hint">表示中の日付とは別の日のタスクのため、他のタスクへの切り替えはできません。先に「完了」してください。</div>' : ""}`;
   } else {
     timerHtml = `
       <div class="timer-phase">タスクを選んで開始</div>
@@ -2505,7 +2604,7 @@ function renderFocusTaskDetailHtml(task) {
     <div class="focus-task-detail">
       <div class="focus-task-detail-title ${task.completed ? "done" : ""}">${escapeHtml(wbsNodePath(state, task.wbsNodeId))}${task.completed ? "(完了済み)" : ""}</div>
       <div class="focus-task-detail-meta">
-        ${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}(<svg class="icon"><use href="#icon-tomato"></use></svg>${task.plannedPomodoros})・実績${formatDuration(task.actualMinutes)}
+        ${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}(<svg class="icon"><use href="#icon-tomato"></use></svg>${task.plannedPomodoros})・実績${formatDuration(Math.round(task.actualSeconds / 60))}
       </div>
       ${memoHtml}
     </div>`;
@@ -2545,7 +2644,7 @@ function renderStatsView({ resetScroll = false } = {}) {
     <tr>
       <td>${escapeHtml(wbsNodeName(state, t.wbsNodeId))}</td>
       <td>${formatDuration(t.plannedMinutes)}</td>
-      <td>${formatDuration(t.actualMinutes)}</td>
+      <td>${formatDuration(Math.round(t.actualSeconds / 60))}</td>
       <td>${t.completed ? '<svg class="icon"><use href="#icon-check"></use></svg>' : "—"}</td>
     </tr>`).join("");
 
@@ -2686,7 +2785,7 @@ function renderWbsAggregatesHtml() {
       <span class="wbs-row-label" style="padding-left:${guide.indentPx}px">
         ${toggleHtml}${nameHtml}
       </span>
-      <span class="wbs-row-value">${formatDuration(t.planned)} 計画 / ${formatDuration(t.actual)} 実績</span>
+      <span class="wbs-row-value">${formatDuration(t.planned)} 計画 / ${formatDuration(Math.round(t.actual / 60))} 実績</span>
     </div>`;
   }, true, id => !statsExpandedNodeIds.has(id));
 }
@@ -3423,9 +3522,12 @@ document.addEventListener("click", (e) => {
       // 集中タブは予定タブとselectedDateを共用するため、遷移元のタスクが
       // 属する日(btn.dataset.day)にselectedDate自体を合わせてから切り替える
       // (他日のタスクの⏱ボタンから来た場合、集中タブが今日のリストの
-      // ままだと選んだタスクが選択肢に出ない)。
+      // ままだと選んだタスクが選択肢に出ない)。対象タスクの切り替え自体は
+      // switchFocusTargetに委譲する(`<select>`のonchangeと共通処理にすることで、
+      // 他タスクが一時停止中のまま残っていてもここで正しく退避され、
+      // 「⏱で選んだはずが別のタスクの画面に飛ぶ」不具合を防ぐ)。
       if (btn.dataset.day) selectedDate = btn.dataset.day;
-      focusSelectedTaskId = id;
+      switchFocusTarget(id);
       switchView("focus");
       break;
     case "task:add-open": {
@@ -3690,11 +3792,11 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "finish": {
-      const elapsed = getSessionElapsedFocusMinutes(state.activeSession);
-      const msg = elapsed > 0
-        ? `ここまでの実績(${elapsed}分)を記録して終了しますか?`
-        : "終了しますか?";
-      if (confirm(msg)) finishSession(elapsed);
+      const pendingSeconds = getPendingElapsedSeconds(state.activeSession);
+      const msg = pendingSeconds > 0
+        ? `ここまでの実績(${Math.round(pendingSeconds / 60)}分)を記録してこのタスクを完了にしますか?`
+        : "このタスクを完了にしますか?";
+      if (confirm(msg)) finishSession();
       break;
     }
     case "task:undo": performTaskUndo(); break;
@@ -3715,29 +3817,19 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target;
   if (el.matches('input[type="checkbox"][data-action="toggle"]')) {
+    if (hasSessionInProgress(el.dataset.id)) {
+      el.checked = !el.checked; // 見た目を元に戻す(実際の状態は変更しない)
+      alert("このタスクには実行中または中断中の集中セッションがあります。先にタイマー側で完了させてください。");
+      return;
+    }
     recordUndoPoint();
     toggleTaskComplete(state, selectedDate, el.dataset.id);
     saveState(state); renderAll();
   } else if (el.id === "focusTaskSelect") {
-    const newId = el.value;
-    // 一時停止中のセッションがあれば退避し、選んだタスクに中断状態が
-    // あれば復元する(select自体はactiveSessionが実行中の間は無効化されて
-    // いるため、実行中からここに来ることは無い)。
-    if (state.activeSession && state.activeSession.paused) {
-      state.pausedSessions[state.activeSession.taskId] = {
-        kind: state.activeSession.kind,
-        pausedRemainingMs: state.activeSession.pausedRemainingMs,
-        dayKey: state.activeSession.dayKey,
-      };
-      state.activeSession = null;
-    }
-    if (!state.activeSession && state.pausedSessions[newId]) {
-      const parked = state.pausedSessions[newId];
-      state.activeSession = { taskId: newId, dayKey: parked.dayKey, kind: parked.kind, paused: true, pausedRemainingMs: parked.pausedRemainingMs, endAt: null };
-      delete state.pausedSessions[newId];
-    }
-    focusSelectedTaskId = newId;
-    saveState(state);
+    // 一時停止中のセッションの退避/復元はswitchFocusTargetに委譲する
+    // (タイムラインの⏱ボタン・「今」バナーのタップとも共通処理にして、
+    // 経路によって挙動が食い違わないようにする)。
+    switchFocusTarget(el.value);
     renderFocusView();
   } else if (el.id === "importFile") {
     handleImportFile(el.files[0]);
