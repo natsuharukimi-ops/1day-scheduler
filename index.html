@@ -792,7 +792,7 @@ const SCHEMA_VERSION = 6;
 // 末尾に表示するためだけに存在する。「実機で開いているものが最新の
 // 更新版にちゃんと差し変わっているか」を確認する手段が無かった、という
 // 指摘を受けて追加した。
-const APP_VERSION = "v1.3.0";
+const APP_VERSION = "v1.5.0";
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
@@ -1543,19 +1543,31 @@ function getPendingElapsedSeconds(session) {
   if (!session || session.paused) return 0;
   return Math.max(0, Math.round((Date.now() - session.checkpointAt) / 1000));
 }
-// タイマーの「完了」ボタン(旧「終了」)。実行中ならその場までの経過分を
-// コミットしたうえで(一時停止中は既にコミット済みのため何もしない)、
-// 対象タスクを完了状態にする(チェックボックスと同じcompleted=trueへの
-// 遷移)。完了状態になった後も別セッションの開始やチェックボックスでの
-// 解除は他の経路でこれまで通り行えるため、ここでは一方向にtrueへ倒すだけでよい。
+// 指定タスクを「完了」にし、そのタスクが持つセッション(実行中の
+// activeSession自身、または一時停止して他タスクへ切替時にpausedSessionsへ
+// 退避されたもの)があれば終わらせる。実行中ならその場までの経過分を
+// コミットしたうえで(一時停止中/退避中は一時停止した時点で既にコミット
+// 済みのため何もしない)対象タスクをcompleted:trueにする。タイマーの
+// 「完了」ボタン(finishSession)・タイムライン/編集モーダルの完了チェック
+// のどちらから来ても同じ扱いにするための共通処理。
+function completeTaskAndEndSession(dayKey, taskId) {
+  if (state.activeSession && state.activeSession.taskId === taskId) {
+    if (!state.activeSession.paused) commitElapsedSinceCheckpoint(state.activeSession);
+    state.activeSession = null;
+  } else if (state.pausedSessions[taskId]) {
+    delete state.pausedSessions[taskId];
+  }
+  const day = state.days[dayKey];
+  const task = day && day.tasks.find(t => t.id === taskId);
+  if (task) task.completed = true;
+}
+// タイマーの「完了」ボタン(旧「終了」)。完了状態になった後も別セッションの
+// 開始やチェックボックスでの解除は他の経路でこれまで通り行えるため、ここでは
+// 一方向にtrueへ倒すだけでよい。
 function finishSession() {
   const session = state.activeSession;
   if (!session) return;
-  if (!session.paused) commitElapsedSinceCheckpoint(session);
-  const day = state.days[session.dayKey];
-  const task = day && day.tasks.find(t => t.id === session.taskId);
-  if (task) task.completed = true;
-  state.activeSession = null;
+  completeTaskAndEndSession(session.dayKey, session.taskId);
   saveState(state); renderAll();
 }
 // 休憩明けに次の集中ブロックへ自動で繋げてよいか。タスクの計画ブロック数
@@ -2400,9 +2412,10 @@ function openTaskModal(taskId, dayKey) {
     const timerInProgress = hasSessionInProgress(taskId);
     document.getElementById("editTaskActual").disabled = timerInProgress;
     document.getElementById("editTaskActualNote").style.display = timerInProgress ? "" : "none";
-    // 完了チェックも同じ基準で無効化する(タイムラインのチェックボックスと
-    // 同様、セッション進行中はタイマー側の「完了」で締めくくってもらう)。
-    document.getElementById("editTaskCompleted").disabled = timerInProgress;
+    // 完了チェックはタイムラインのチェックボックスと同様、セッション進行中
+    // でも操作可能にする(保存時にcompleteTaskAndEndSessionでセッション側も
+    // まとめて終える。実績欄はセッション自身の実績確定と競合しうるため
+    // 引き続き無効化する)。
   }
   document.getElementById("taskEditModal").classList.remove("hidden");
 }
@@ -2445,6 +2458,14 @@ function saveTaskEditFromForm() {
   recordUndoPoint();
   try {
     if (isEdit) {
+      // 完了チェックがオンで対象にセッションが進行中なら、集中タブの
+      // 「完了」ボタンと同じ扱いでここでセッションを終える(実行中なら
+      // その場までの経過分を実績へコミットする)。実績欄はこの場合必ず
+      // disabledだったため、上で読んだactualSecondsは古いままなので読み直す。
+      if (completed && hasSessionInProgress(editingTaskId)) {
+        completeTaskAndEndSession(editingTaskDayKey, editingTaskId);
+        actualSeconds = getEntryForDate(editingTaskDayKey).tasks.find(t => t.id === editingTaskId).actualSeconds;
+      }
       updateTask(state, editingTaskDayKey, editingTaskId, {
         wbsNodeId: taskFormWbsNodeId, memo, startTime: start, endTime: end,
         actualSeconds, completed,
@@ -2513,23 +2534,24 @@ function renderFocusView({ resetScroll = false } = {}) {
   // 存在しないため、entryだけを見ると見失う(以前はここでタスクが見つからず、
   // タイトル・実績が表示されなくなるバグがあった)。
   const sessionTask = session ? getEntryForDate(session.dayKey).tasks.find(t => t.id === session.taskId) : null;
-  const sessionTaskOtherDay = !!(session && session.dayKey !== selectedDate);
 
   const selectedId = session ? session.taskId : focusSelectedTaskId;
   const selectedTask = session ? sessionTask : (entry.tasks.find(t => t.id === selectedId) || null);
-  // 通常はselectedDateのタスクだけを選択肢にする。セッションのタスクが
-  // 別日(日を跨いだ、または日付ナビで移動した)でselectedDateのリストに
-  // 存在しない場合だけ、先頭に追加してselectedとして見えるようにする
-  // (selectのdisabledと合わせて、他タスクへの切替はできないが現在の対象が
-  // 何かは正しく表示する)。
-  const optionSourceTasks = sessionTaskOtherDay && sessionTask ? [sessionTask, ...entry.tasks] : entry.tasks;
+  // 選択肢は常にselectedDate(表示中の日)のタスクだけにする。セッションの
+  // タスクが別日(日を跨いだ、日付ナビで別日へ移動した等)でこの日のリストに
+  // 無い場合でも先頭に補うことはしない。以前は補って「(◯月◯日から継続)」と
+  // 表示していたが、そこから他のタスクへ切り替える(=補っていたタスクを
+  // pausedSessionsへ退避する)と、次にこの日を見た時にはその「継続」表示が
+  // 消えてしまい、「出たり消えたりする」不整合な挙動になっていた
+  // (ユーザー指摘)。実行中/一時停止中のタスクの名前・残り時間自体は
+  // この選択肢とは別にtimerHtml/detailカードが常に正しく表示するため、
+  // 選択肢を素直に「この日のタスクだけ」に統一しても情報は失われない。
+  const optionSourceTasks = entry.tasks;
   const options = optionSourceTasks.map(t => {
     const isPausedHere = !!(session && session.paused && session.taskId === t.id);
     const pausedMark = (state.pausedSessions[t.id] || isPausedHere) ? "⏸ " : "";
     const doneMark = t.completed ? "✓ " : "";
-    const otherDayMark = (sessionTaskOtherDay && t.id === session.taskId)
-      ? `(${formatJapaneseDate(dayKeyToDate(session.dayKey))}から継続) ` : "";
-    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${otherDayMark}${escapeHtml(wbsNodePath(state, t.wbsNodeId))}</option>`;
+    return `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${pausedMark}${doneMark}${escapeHtml(wbsNodePath(state, t.wbsNodeId))}</option>`;
   }).join("");
 
   let timerHtml;
@@ -2558,8 +2580,7 @@ function renderFocusView({ resetScroll = false } = {}) {
         <button class="btn danger-outline" data-action="finish">完了</button>
       </div>
       ${breakContinueHint}
-      ${session.paused && !sessionTaskOtherDay ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}
-      ${sessionTaskOtherDay ? '<div class="timer-hint">表示中の日付とは別の日のタスクのため、他のタスクへの切り替えはできません。先に「完了」してください。</div>' : ""}`;
+      ${session.paused ? '<div class="timer-hint">一時停止中は上のリストから別のタスクに切り替えられます</div>' : ""}`;
   } else {
     timerHtml = `
       <div class="timer-phase">タスクを選んで開始</div>
@@ -2569,11 +2590,10 @@ function renderFocusView({ resetScroll = false } = {}) {
       </div>`;
   }
 
-  // 実行中(一時停止していない)のセッションに加え、別日のセッションも
-  // 選択肢を固定する(上記のoptionSourceTasksの特別扱いと対にして、
-  // 「表示中の日のタスクに切り替えたつもりが別日のタスクの残り状態を壊す」
-  // ことを防ぐ)。
-  const selectDisabled = !!(session && (!session.paused || sessionTaskOtherDay));
+  // 実行中(一時停止していない)のセッションがある間だけ選択肢を固定する
+  // (switchFocusTargetが各セッション自身のdayKeyで退避/復元するため、
+  // 一時停止中ならselectedDateと一致しない相手でも安全に切り替えられる)。
+  const selectDisabled = !!(session && !session.paused);
   container.innerHTML = `
     <div class="focus-select-row">
       <select id="focusTaskSelect" ${selectDisabled ? "disabled" : ""}>
@@ -3817,13 +3837,16 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target;
   if (el.matches('input[type="checkbox"][data-action="toggle"]')) {
-    if (hasSessionInProgress(el.dataset.id)) {
-      el.checked = !el.checked; // 見た目を元に戻す(実際の状態は変更しない)
-      alert("このタスクには実行中または中断中の集中セッションがあります。先にタイマー側で完了させてください。");
-      return;
-    }
     recordUndoPoint();
-    toggleTaskComplete(state, selectedDate, el.dataset.id);
+    // チェックを入れる(完了にする)操作は、対象にセッションが進行中でも
+    // 集中タブの「完了」ボタンと同じ扱いで受け入れる(実行中ならその場までの
+    // 経過分をコミットしてからセッションを終える)。外す(解除する)側は
+    // セッションと無関係な通常のトグルのままでよい。
+    if (el.checked) {
+      completeTaskAndEndSession(selectedDate, el.dataset.id);
+    } else {
+      toggleTaskComplete(state, selectedDate, el.dataset.id);
+    }
     saveState(state); renderAll();
   } else if (el.id === "focusTaskSelect") {
     // 一時停止中のセッションの退避/復元はswitchFocusTargetに委譲する
