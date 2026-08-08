@@ -201,6 +201,7 @@
      に変えて視覚的に区別している。 */
   .icon-rotate-down { transform: rotate(90deg); }
   .icon-rotate-up { transform: rotate(-90deg); }
+  .icon-rotate-180 { transform: rotate(180deg); }
   .icon-rotate-left { transform: rotate(180deg); }
 
   main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
@@ -389,6 +390,46 @@
   }
   .today-table th, .today-table td { padding: 11px 13px; text-align: left; border-bottom: 1px solid var(--border); }
   .today-table th { color: var(--text-muted); font-weight: 600; font-size: 14px; }
+
+  /* 一覧タブ(期間・状態フィルタ+並び替え+一括操作付きの横断タスク一覧)。
+     予定タブの箱・WBS別集計の行と同じ配色トーンに揃え、専用の見た目を
+     作り込まない。 */
+  .list-filter-row, .list-sort-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .list-filter-row { margin-bottom: 10px; }
+  .list-sort-row { margin-bottom: 16px; align-items: center; }
+  .list-filter-row select, .list-sort-row select {
+    flex: 1; font-size: 15px; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  .list-bulk-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; margin-bottom: 12px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--bg-elevated);
+  }
+  .list-bulk-select-all { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-muted); }
+  .list-bulk-select-all input[type="checkbox"] { width: 20px; height: 20px; }
+  .list-bulk-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .list-rows { display: flex; flex-direction: column; gap: 10px; }
+  .list-row {
+    display: flex; align-items: flex-start; gap: 10px; width: 100%; margin: 0;
+    text-align: left; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); cursor: pointer;
+  }
+  .list-row.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .list-row-select-wrap { flex-shrink: 0; padding-top: 2px; }
+  .list-row-select-wrap input[type="checkbox"] { width: 20px; height: 20px; }
+  .list-row-body { flex: 1; min-width: 0; }
+  .list-row-date { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+  .list-row-title { display: block; font-size: 16px; font-weight: 600; }
+  .list-row-title.done { text-decoration: line-through; color: var(--text-muted); }
+  .list-row-meta { display: block; font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+  .list-row-status {
+    display: inline-block; margin-top: 7px; font-size: 12px; padding: 2px 10px; border-radius: 999px;
+    background: var(--border); color: var(--text-muted);
+  }
+  .list-row-status.status-running { background: var(--accent); color: var(--accent-contrast); }
+  .list-row-status.status-paused { background: var(--bg); color: var(--accent); border: 1px solid var(--accent); }
+  .list-row-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 
   .heatmap-title { font-size: 15px; color: var(--text-muted); margin-bottom: 10px; }
   /* WBS別集計の見出し行(タイトル+全展開/全折りたたみボタン)。ボタンと
@@ -649,6 +690,13 @@
     <circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/>
   </symbol>
   <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="icon-list" viewBox="0 0 24 24">
+    <circle cx="5" cy="6" r="1.5" fill="currentColor" stroke="none"/>
+    <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+    <circle cx="5" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+    <path d="M9 6h11M9 12h11M9 18h11"/>
+  </symbol>
+  <symbol id="icon-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
 </svg>
 <div id="app">
   <header class="app-header" id="appHeader"></header>
@@ -657,6 +705,7 @@
     <section class="view active" data-view="today" id="todayView"></section>
     <section class="view" data-view="focus" id="focusView"></section>
     <section class="view" data-view="stats" id="statsView"></section>
+    <section class="view" data-view="list" id="listView"></section>
   </main>
 
   <nav class="tabbar">
@@ -668,6 +717,9 @@
     </button>
     <button class="tab-btn" data-action="tab" data-tab="stats">
       <span class="tab-icon"><svg class="icon"><use href="#icon-stats"></use></svg></span><span class="tab-label">実績</span>
+    </button>
+    <button class="tab-btn" data-action="tab" data-tab="list">
+      <span class="tab-icon"><svg class="icon"><use href="#icon-list"></use></svg></span><span class="tab-label">一覧</span>
     </button>
   </nav>
 
@@ -792,7 +844,7 @@ const SCHEMA_VERSION = 6;
 // 末尾に表示するためだけに存在する。「実機で開いているものが最新の
 // 更新版にちゃんと差し変わっているか」を確認する手段が無かった、という
 // 指摘を受けて追加した。
-const APP_VERSION = "v1.5.0";
+const APP_VERSION = "v1.7.1";
 const DEFAULT_SETTINGS = { focusMinutes: 25, breakMinutes: 5, streakThreshold: 1 };
 const PX_PER_MIN = 1.2; // タイムラインの縮尺(72px/時間)
 // 「フル表示」の基準高さ = 1時間ぶんの自然な高さ。1時間のタスクなら
@@ -1619,6 +1671,21 @@ function completeSession() {
 // ==== 6. レンダリング ====
 let currentView = "today";
 let focusSelectedTaskId = null;
+// 一覧タブ(期間・状態フィルタ付きの横断タスク一覧)の現在のフィルタ条件。
+// selectedDateとは独立させている(このタブは「今日」に限らず複数日を
+// またいで見るためのものなので、他タブと共用の日付ナビには乗せない)。
+// タブを切り替えても値は保持するが、localStorageには保存しない(ページを
+// 開き直すたびに既定のtoday/allへ戻る、他の表示専用の一時状態と同じ扱い)。
+let listFilterPeriod = "today"; // "today" | "week" | "all"
+let listFilterStatus = "all"; // "all" | "pending" | "running" | "paused" | "completed"
+// 並び替え条件も同様にタブ内だけの一時状態。既定は日時の降順(新しい日時が
+// 上、旧デフォルトの「新しい日が上」に近い体感を保つ)。
+let listSortKey = "datetime"; // "datetime" | "wbs" | "status" | "planned" | "actual"
+let listSortAsc = false;
+// 一括操作(完了/削除)向けに選択中のタスクIDの集合。フィルタ変更等で
+// 対象が見えなくなった場合はrenderListViewの中で自動的に間引く(選択が
+// 表示されていないタスクを指したまま残る不整合を防ぐ)。
+let listSelectedIds = new Set();
 // 「予定」タブ・「集中」タブが共用する表示対象の日付。ページ読み込みの
 // たびに必ず実際の今日にリセットされ、localStorageには保存しない。
 // 「集中」タブもこの日付のタスクを選んで実行できる(activeSession.dayKey
@@ -1733,6 +1800,7 @@ function renderAll() {
   if (currentView === "today") renderTodayView();
   if (currentView === "focus") renderFocusView();
   if (currentView === "stats") renderStatsView();
+  if (currentView === "list") renderListView();
 }
 // アプリ全体で常に表示されるヘッダー(タブを切り替えてもスクロールしても
 // 消えない)。以前は.app-header(タイトル+アイコン)と.today-sticky-header
@@ -2477,6 +2545,7 @@ function saveTaskEditFromForm() {
     closeTaskEditModal();
     if (currentView === "today") renderTodayView();
     if (currentView === "focus") renderFocusView();
+    if (currentView === "list") renderListView();
     renderAppHeader();
   } catch (err) {
     discardPendingUndoSnapshot();
@@ -2488,6 +2557,16 @@ function saveTaskEditFromForm() {
 // 削除を拒否する。
 function hasSessionInProgress(taskId) {
   return (state.activeSession && state.activeSession.taskId === taskId) || !!state.pausedSessions[taskId];
+}
+// 一覧タブのフィルタ・状態バッジ用。タスクIDだけで判定できる
+// (activeSession/pausedSessionsはどちらも日付をまたいでもtaskId基準で
+// 一意に持つため、どの日のタスクかは問わない)。
+function getTaskStatus(task) {
+  if (state.activeSession && state.activeSession.taskId === task.id) {
+    return state.activeSession.paused ? "paused" : "running";
+  }
+  if (state.pausedSessions[task.id]) return "paused";
+  return task.completed ? "completed" : "pending";
 }
 function deleteFromTaskModal() {
   if (editingTaskId === null) return;
@@ -2502,6 +2581,7 @@ function deleteFromTaskModal() {
   closeTaskEditModal();
   if (currentView === "today") renderTodayView();
   if (currentView === "focus") renderFocusView();
+  if (currentView === "list") renderListView();
   renderAppHeader();
 }
 
@@ -2810,6 +2890,200 @@ function renderWbsAggregatesHtml() {
   }, true, id => !statsExpandedNodeIds.has(id));
 }
 
+// ---- 一覧タブ(期間・状態フィルタ+並び替え+一括操作付きの横断タスク一覧) ----
+// 予定/集中/実績の3タブはどれも「1日」を単位にselectedDateを共用しているが、
+// 「一時停止中のタスクだけ横断的に見たい」といった要望はそもそも日付を
+// またいで探す必要があるため、他タブとは独立に期間そのものをフィルタの
+// 一部として扱う専用タブにした。日ごとにstate.daysへ分かれているタスクを
+// 期間分だけ横断して集め、{dayKey, task}のペア配列として返す。
+function collectFilteredTasksForList(period, status, sortKey, sortAsc) {
+  const today = todayKey();
+  let dayKeys;
+  if (period === "today") {
+    dayKeys = [today];
+  } else if (period === "week") {
+    dayKeys = Array.from({ length: 7 }, (_, i) => addDays(today, -i));
+  } else {
+    dayKeys = Object.keys(state.days);
+  }
+  const rows = [];
+  for (const dayKey of dayKeys) {
+    const entry = state.days[dayKey];
+    if (!entry) continue;
+    for (const task of entry.tasks) {
+      if (status !== "all" && getTaskStatus(task) !== status) continue;
+      rows.push({ dayKey, task });
+    }
+  }
+  rows.sort((a, b) => {
+    const diff = compareListRows(a, b, sortKey);
+    return sortAsc ? diff : -diff;
+  });
+  return rows;
+}
+// 状態を並び替え対象にする場合の順位付け。数値の大小に意味は無く、
+// 「今すぐ手を動かせば進む状態」を先(小さい値)に置く: 実行中→一時停止中→
+// 未着手→完了(完了は最後に確定した=もう動かす必要が無いものとして最下位)。
+const LIST_STATUS_ORDER = { running: 0, paused: 1, pending: 2, completed: 3 };
+// dayKey(YYYY-MM-DD)・startTime(HH:MM)はどちらもゼロ埋めの固定長文字列
+// なので、文字列比較がそのまま時系列の大小比較になる。日時は同じ日の
+// 同じ時刻に2つのタスクが存在しえない(重なり禁止のバリデーションにより
+// 保証されている)ため、他の基準の同値タイブレークとして使うのに適している。
+function compareDatetime(a, b) {
+  return `${a.dayKey} ${a.task.startTime}`.localeCompare(`${b.dayKey} ${b.task.startTime}`);
+}
+function compareListRows(a, b, sortKey) {
+  let diff;
+  switch (sortKey) {
+    case "wbs":
+      diff = wbsNodePath(state, a.task.wbsNodeId).localeCompare(wbsNodePath(state, b.task.wbsNodeId), "ja");
+      break;
+    case "status":
+      diff = LIST_STATUS_ORDER[getTaskStatus(a.task)] - LIST_STATUS_ORDER[getTaskStatus(b.task)];
+      break;
+    case "planned":
+      diff = a.task.plannedMinutes - b.task.plannedMinutes;
+      break;
+    case "actual":
+      diff = a.task.actualSeconds - b.task.actualSeconds;
+      break;
+    case "datetime":
+    default:
+      return compareDatetime(a, b);
+  }
+  // WBS/状態/計画時間/実績時間は同値(タイ)になりうる(同じWBSノードを
+  // 使うタスクは多いし、状態は4値しかない)。日時は重なり禁止のおかげで
+  // 必ず一意なので、同値の場合は常に日時をタイブレークの基準にする
+  // (でないとObject.keys(state.days)の挿入順やtasks配列の追加順という、
+  // ユーザーから見て意味の無い順序がそのまま残ってしまう)。
+  return diff !== 0 ? diff : compareDatetime(a, b);
+}
+const LIST_STATUS_LABELS = { pending: "未着手", running: "実行中", paused: "一時停止中", completed: "完了" };
+function getCurrentListRows() {
+  return collectFilteredTasksForList(listFilterPeriod, listFilterStatus, listSortKey, listSortAsc);
+}
+function renderListView({ resetScroll = false } = {}) {
+  const container = document.getElementById("listView");
+  const rows = getCurrentListRows();
+  // フィルタ変更等で表示から外れたタスクの選択は自動的に間引く(見えていない
+  // タスクが「選択中」のまま残る不整合を防ぐ)。
+  const visibleIds = new Set(rows.map(r => r.task.id));
+  for (const id of [...listSelectedIds]) { if (!visibleIds.has(id)) listSelectedIds.delete(id); }
+  // 期間が「今日」の間は日付が自明なので、行ごとの日付ラベルは複数日が
+  // 混ざりうる時(週間/全期間)だけ出す。
+  const showDate = listFilterPeriod !== "today";
+  const rowsHtml = rows.map(({ dayKey, task }) => {
+    const status = getTaskStatus(task);
+    const dateHtml = showDate ? `<span class="list-row-date">${formatJapaneseDate(dayKeyToDate(dayKey))}</span>` : "";
+    const selected = listSelectedIds.has(task.id);
+    return `<div class="list-row${selected ? " selected" : ""}" data-action="task:edit-open" data-id="${task.id}" data-day="${dayKey}">
+      <label class="list-row-select-wrap" data-action="list:select" data-id="${task.id}">
+        <input type="checkbox" data-action="list:select" data-id="${task.id}" ${selected ? "checked" : ""} aria-label="選択">
+      </label>
+      <div class="list-row-body">
+        ${dateHtml}
+        <span class="list-row-title ${task.completed ? "done" : ""}">${escapeHtml(wbsNodePath(state, task.wbsNodeId))}</span>
+        <span class="list-row-meta">${task.startTime}〜${task.endTime}・計画${formatDuration(task.plannedMinutes)}・実績${formatDuration(Math.round(task.actualSeconds / 60))}</span>
+        <span class="list-row-status status-${status}">${LIST_STATUS_LABELS[status]}</span>
+      </div>
+      <div class="list-row-actions">
+        <button type="button" class="icon-btn glyph-icon-btn" data-action="task:select-focus" data-id="${task.id}" data-day="${dayKey}" aria-label="集中タブへ"><svg class="icon"><use href="#icon-focus"></use></svg></button>
+        <button type="button" class="icon-btn glyph-icon-btn" data-action="task:select-today" data-id="${task.id}" data-day="${dayKey}" aria-label="予定タブへ"><svg class="icon"><use href="#icon-schedule"></use></svg></button>
+      </div>
+    </div>`;
+  }).join("");
+  const selectedCount = listSelectedIds.size;
+  const allSelected = rows.length > 0 && selectedCount === rows.length;
+  container.innerHTML = `
+    <div class="list-filter-row">
+      <select id="listFilterPeriod" aria-label="期間">
+        <option value="today" ${listFilterPeriod === "today" ? "selected" : ""}>今日</option>
+        <option value="week" ${listFilterPeriod === "week" ? "selected" : ""}>直近7日間</option>
+        <option value="all" ${listFilterPeriod === "all" ? "selected" : ""}>全期間</option>
+      </select>
+      <select id="listFilterStatus" aria-label="状態">
+        <option value="all" ${listFilterStatus === "all" ? "selected" : ""}>すべての状態</option>
+        <option value="pending" ${listFilterStatus === "pending" ? "selected" : ""}>未着手</option>
+        <option value="running" ${listFilterStatus === "running" ? "selected" : ""}>実行中</option>
+        <option value="paused" ${listFilterStatus === "paused" ? "selected" : ""}>一時停止中</option>
+        <option value="completed" ${listFilterStatus === "completed" ? "selected" : ""}>完了</option>
+      </select>
+    </div>
+    <div class="list-sort-row">
+      <select id="listSortKey" aria-label="並び替え">
+        <option value="datetime" ${listSortKey === "datetime" ? "selected" : ""}>日時で並び替え</option>
+        <option value="wbs" ${listSortKey === "wbs" ? "selected" : ""}>WBSで並び替え</option>
+        <option value="status" ${listSortKey === "status" ? "selected" : ""}>状態で並び替え</option>
+        <option value="planned" ${listSortKey === "planned" ? "selected" : ""}>計画時間で並び替え</option>
+        <option value="actual" ${listSortKey === "actual" ? "selected" : ""}>実績時間で並び替え</option>
+      </select>
+      <button type="button" class="icon-btn date-nav-btn" data-action="list:toggle-sort-dir"
+        aria-label="${listSortAsc ? "昇順(タップで降順に切り替え)" : "降順(タップで昇順に切り替え)"}">
+        <svg class="icon${listSortAsc ? "" : " icon-rotate-180"}"><use href="#icon-arrow-up"></use></svg>
+      </button>
+    </div>
+    <div class="list-bulk-bar">
+      <label class="list-bulk-select-all">
+        <input type="checkbox" id="listSelectAllCheckbox" ${allSelected ? "checked" : ""} ${rows.length ? "" : "disabled"}>
+        <span>${selectedCount > 0 ? `${selectedCount}件選択中` : "すべて選択"}</span>
+      </label>
+      ${selectedCount > 0 ? `
+        <div class="list-bulk-actions">
+          <button type="button" class="icon-btn glyph-icon-btn" data-action="list:bulk-complete" aria-label="選択したタスクを完了にする"><svg class="icon"><use href="#icon-check"></use></svg></button>
+          <button type="button" class="icon-btn glyph-icon-btn danger" data-action="list:bulk-delete" aria-label="選択したタスクを削除"><svg class="icon"><use href="#icon-delete"></use></svg></button>
+        </div>` : ""}
+    </div>
+    <div class="list-rows">
+      ${rows.length ? rowsHtml : '<div class="empty-hint">条件に合うタスクはありません</div>'}
+    </div>
+  `;
+  if (resetScroll) {
+    const main = document.querySelector("main");
+    if (main) main.scrollTop = 0;
+  }
+}
+// 選択したタスクを一括で完了にする(タイマーの「完了」ボタン・タイムライン/
+// 編集モーダルの完了チェックと同じcompleteTaskAndEndSessionを使うため、
+// セッション進行中のタスクが混ざっていても実行中ならその場までの経過分を
+// コミットしてから完了にできる)。
+function bulkCompleteSelectedListTasks() {
+  const rows = getCurrentListRows().filter(r => listSelectedIds.has(r.task.id));
+  if (rows.length === 0) return;
+  if (!confirm(`選択した${rows.length}件のタスクを完了にしますか?`)) return;
+  recordUndoPoint();
+  for (const { dayKey, task } of rows) {
+    completeTaskAndEndSession(dayKey, task.id);
+  }
+  saveState(state);
+  listSelectedIds.clear();
+  renderAll();
+}
+// 選択したタスクを一括削除する。削除ガード(hasSessionInProgress)は個別
+// 削除と同じ基準のまま維持する(不可逆操作のため、完了と違って緩めていない。
+// 上記の設計判断を参照)。選択の中に削除できないタスクが混ざっている場合は
+// 件数を示した上で、削除できる分だけ確認して進める。
+function bulkDeleteSelectedListTasks() {
+  const rows = getCurrentListRows().filter(r => listSelectedIds.has(r.task.id));
+  if (rows.length === 0) return;
+  const blocked = rows.filter(r => hasSessionInProgress(r.task.id));
+  const deletable = rows.filter(r => !hasSessionInProgress(r.task.id));
+  if (deletable.length === 0) {
+    alert("選択したタスクはすべて実行中または一時停止中の集中セッションがあるため削除できません。先にタイマー側で完了させてください。");
+    return;
+  }
+  const msg = blocked.length > 0
+    ? `選択した${rows.length}件のうち${blocked.length}件は実行中または一時停止中のため削除できません。残り${deletable.length}件を削除しますか?この操作は取り消せません。`
+    : `選択した${deletable.length}件のタスクを削除しますか?この操作は取り消せません。`;
+  if (!confirm(msg)) return;
+  recordUndoPoint();
+  for (const { dayKey, task } of deletable) {
+    removeTask(state, dayKey, task.id);
+  }
+  saveState(state);
+  listSelectedIds.clear();
+  renderAll();
+}
+
 function switchView(view) {
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.dataset.view === view));
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === view));
@@ -2818,6 +3092,7 @@ function switchView(view) {
   if (view === "today") renderTodayView({ autoscroll: true });
   if (view === "focus") renderFocusView({ resetScroll: true });
   if (view === "stats") renderStatsView({ resetScroll: true });
+  if (view === "list") renderListView({ resetScroll: true });
 }
 // 予定タブ・集中タブ・実績タブはselectedDateを共用しているため、日付ナビ
 // (date:prev等・カレンダーのcal:pick)は現在表示中のタブに応じてどれか
@@ -3550,6 +3825,24 @@ document.addEventListener("click", (e) => {
       switchFocusTarget(id);
       switchView("focus");
       break;
+    case "task:select-today": {
+      // 一覧タブから「予定タブへ」で、そのタスクが属する日のタイムラインへ
+      // ジャンプする。switchViewのautoscrollは「今」または対象日の最初の
+      // タスクへ飛ぶだけで対象タスク自身は考慮しないため、switchView後に
+      // 改めてそのタスクの箱までスクロールし直す(scrollTimelineToRelevantPosition
+      // と同じ計算方法)。selectTimelineTaskでアクセント枠を付け、どのタスクへ
+      // ジャンプしたか一目で分かるようにする。
+      if (btn.dataset.day) selectedDate = btn.dataset.day;
+      selectTimelineTask(id);
+      switchView("today");
+      const main = document.querySelector("main");
+      const box = document.querySelector(`.timeline-task[data-id="${id}"]`);
+      if (main && box) {
+        const targetTop = box.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+        main.scrollTop = Math.max(0, targetTop - 16);
+      }
+      break;
+    }
     case "task:add-open": {
       let startMin = Math.ceil((new Date().getHours() * 60 + new Date().getMinutes()) / TIMELINE_SNAP_MIN) * TIMELINE_SNAP_MIN;
       startMin = Math.min(startMin, 24 * 60 - TIMELINE_SNAP_MIN);
@@ -3719,6 +4012,7 @@ document.addEventListener("click", (e) => {
         // 再描画すればよい(非表示のタブは次の切り替えで作り直される)。
         if (currentView === "today") renderTodayView();
         if (currentView === "stats") renderStatsView();
+        if (currentView === "list") renderListView();
       } catch (err) {
         alert(err.message);
       }
@@ -3780,6 +4074,7 @@ document.addEventListener("click", (e) => {
       renderWbsModal();
       if (currentView === "today") renderTodayView();
       if (currentView === "stats") renderStatsView();
+      if (currentView === "list") renderListView();
       break;
     }
     case "start-focus": {
@@ -3821,6 +4116,9 @@ document.addEventListener("click", (e) => {
     }
     case "task:undo": performTaskUndo(); break;
     case "task:redo": performTaskRedo(); break;
+    case "list:toggle-sort-dir": listSortAsc = !listSortAsc; renderListView(); break;
+    case "list:bulk-complete": bulkCompleteSelectedListTasks(); break;
+    case "list:bulk-delete": bulkDeleteSelectedListTasks(); break;
     case "export": doExport(); break;
     case "settings-open": openSettings(); break;
     case "settings-close": closeSettings(); break;
@@ -3854,6 +4152,31 @@ document.addEventListener("change", (e) => {
     // 経路によって挙動が食い違わないようにする)。
     switchFocusTarget(el.value);
     renderFocusView();
+  } else if (el.id === "listFilterPeriod") {
+    // 絞り込み条件が変わると見えるタスクの集合そのものが変わるため、
+    // 選択中の一括操作対象は一旦クリアする(renderListView内の自動間引きに
+    // 任せてもよいが、期間を切り替えた直後に前の選択がそのまま残っている
+    // ように見えるのは紛らわしいため明示的に消す)。
+    listFilterPeriod = el.value;
+    listSelectedIds.clear();
+    renderListView();
+  } else if (el.id === "listFilterStatus") {
+    listFilterStatus = el.value;
+    listSelectedIds.clear();
+    renderListView();
+  } else if (el.id === "listSortKey") {
+    listSortKey = el.value;
+    renderListView();
+  } else if (el.id === "listSelectAllCheckbox") {
+    if (el.checked) {
+      getCurrentListRows().forEach(r => listSelectedIds.add(r.task.id));
+    } else {
+      listSelectedIds.clear();
+    }
+    renderListView();
+  } else if (el.matches('input[type="checkbox"][data-action="list:select"]')) {
+    if (el.checked) listSelectedIds.add(el.dataset.id); else listSelectedIds.delete(el.dataset.id);
+    renderListView();
   } else if (el.id === "importFile") {
     handleImportFile(el.files[0]);
   } else if (el.id === "editWbsQuickAddParentSelect") {
